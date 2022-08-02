@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logseq SamePage</title>
+    <script src="./node_modules/@logseq/libs/dist/lsplugin.user.js"></script>
+  </head>
+  <body>
+    <script>
+      logseq
+        .ready(() => {
+          logseq.App.showMsg("hey how are ya");
+        })
+        .catch(console.error);
+    </script>
+  </body>
+</html>

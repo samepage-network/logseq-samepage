@@ -19,5 +19,11 @@
   "bugs": {
     "url": "https://github.com/dvargas92495/logseq-samepage/issues"
   },
-  "homepage": "https://github.com/dvargas92495/logseq-samepage#readme"
+  "homepage": "https://github.com/dvargas92495/logseq-samepage#readme",
+  "logseq": {
+    "id": "_smxu2dpe6"
+  },
+  "dependencies": {
+    "@logseq/libs": "^0.0.6"
+  }
 }
