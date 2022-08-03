@@ -1,5 +1,8 @@
 import "@logseq/libs";
+import setupSamePageClient from "./components/setupSamePageClient";
 import "./index.css";
+// import { render } from "./components/NotificationContainer";
+// import loadSharePageWithGraph from "./messages/sharePageWithGraph";
 
 const main = () => {
   logseq.useSettingsSchema([
@@ -26,7 +29,14 @@ const main = () => {
       default: {},
     },
   ]);
-  console.log("samepage ready!");
+
+  /*const api = */setupSamePageClient(
+    () => logseq.settings?.["auto-connect"]
+  );
+  // render(api);
+  // loadSharePageWithGraph(api);
+  // window.samepage = api;
+  console.log("samepage ready!", logseq.settings);
 };
 
 logseq.ready(main).catch(console.error);
