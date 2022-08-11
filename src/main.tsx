@@ -1,42 +1,42 @@
 import "@logseq/libs";
-import setupSamePageClient from "./components/setupSamePageClient";
 import "./index.css";
-// import { render } from "./components/NotificationContainer";
-// import loadSharePageWithGraph from "./messages/sharePageWithGraph";
+import { setupSamePageClient } from "@samepage/client";
+import setupSharePageWithNotebook from "@samepage/client/protocols/sharePageWithNotebook";
 
-const main = () => {
+const main = async () => {
   logseq.useSettingsSchema([
-    {
-      key: "shared-pages",
-      type: "object",
-      title: "Shared Pages",
-      description: "View all of the shared with other notebooks.",
-      default: {},
-    },
     {
       key: "auto-connect",
       type: "boolean",
       title: "Auto Connect",
-      description: "Automatically connect to SamePage Network",
+      description: "Automatically connect to the SamePage Network",
       default: false,
-    },
-    {
-      key: "usage",
-      type: "object",
-      title: "Usage",
-      description:
-        "Displays how much the user has used the SamePage network this month. Price is not actually charged, but to inform what might be used in the future.",
-      default: {},
     },
   ]);
 
-  /*const api = */setupSamePageClient(
-    () => logseq.settings?.["auto-connect"]
+  const workspace = await logseq.App.getCurrentGraph().then(
+    (info) => info?.name || ""
   );
-  // render(api);
-  // loadSharePageWithGraph(api);
-  // window.samepage = api;
-  console.log("samepage ready!", logseq.settings);
+  const unloadSamePageClient = setupSamePageClient({
+    isAutoConnect: logseq.settings?.["auto-connect"] as boolean,
+    app: 2,
+    workspace,
+    addCommand: ({ label, callback }) =>
+      logseq.App.registerCommandPalette({ label, key: label }, callback),
+  });
+  const unloadSharePageWithGraph = setupSharePageWithNotebook({
+    getUpdateLog: () => [
+      // compare with input id
+    ],
+    render: ({ onSubmit }) => {},
+  });
+
+  logseq.beforeunload(async () => {
+    unloadSharePageWithGraph();
+    unloadSamePageClient();
+  });
+  // loadSharePageWithGraph();
+  // ... loading other protocols go here ...
 };
 
 logseq.ready(main).catch(console.error);
