@@ -2,6 +2,7 @@ import "@logseq/libs";
 import "./index.css";
 import { setupSamePageClient } from "@samepage/client";
 import setupSharePageWithNotebook from "@samepage/client/protocols/sharePageWithNotebook";
+import { render } from "./components/SharePageDialog";
 
 const main = async () => {
   logseq.useSettingsSchema([
@@ -23,20 +24,30 @@ const main = async () => {
     workspace,
     addCommand: ({ label, callback }) =>
       logseq.App.registerCommandPalette({ label, key: label }, callback),
+    removeCommand: ({ label }) => {
+      console.log(
+        `Could not unregister the ${label} command. Does LogSeq support it?`
+      );
+    },
   });
   const unloadSharePageWithGraph = setupSharePageWithNotebook({
     getUpdateLog: () => [
       // compare with input id
     ],
-    render: ({ onSubmit }) => {},
+    render: async ({ onSubmit }) => {
+      const notebookPageId = await logseq.Editor.getCurrentPage().then(
+        (p) => p?.id.toString() || ""
+      );
+      render({ onSubmit, notebookPageId });
+    },
   });
+  // ... loading other protocols go here ...
 
   logseq.beforeunload(async () => {
     unloadSharePageWithGraph();
     unloadSamePageClient();
   });
-  // loadSharePageWithGraph();
-  // ... loading other protocols go here ...
+  console.log("samepage ready!");
 };
 
 logseq.ready(main).catch(console.error);

@@ -1,10 +1,23 @@
 import { Notebook } from "@samepage/client/types";
 import React, { useCallback, useState } from "react";
-import { Button, Classes, Dialog, Label, InputGroup, Intent } from "@blueprintjs/core";
+import ReactDOM from "react-dom";
+import {
+  Button,
+  Classes,
+  Dialog,
+  Label,
+  InputGroup,
+  Intent,
+} from "@blueprintjs/core";
 
 type OnSubmitProps = {
   notebookPageId: string;
 } & Notebook;
+
+type Props = {
+  onSubmit: (p: OnSubmitProps) => void;
+  notebookPageId: string;
+};
 
 const SharePageDialog = ({
   onClose,
@@ -12,9 +25,7 @@ const SharePageDialog = ({
   notebookPageId,
 }: {
   onClose: () => void;
-  onSubmit: (p: OnSubmitProps) => void;
-  notebookPageId: string;
-}) => {
+} & Props) => {
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [currentworkspace, setCurrentWorkspace] = useState("");
   const [loading, setLoading] = useState(false);
@@ -46,7 +57,9 @@ const SharePageDialog = ({
         </p>
         {notebooks.map((g, i) => (
           <div className="flex gap-4 items-center">
-            <span className={"flex-grow"}>{g.app} - {g.workspace}</span>
+            <span className={"flex-grow"}>
+              {g.app} - {g.workspace}
+            </span>
             <Button
               minimal
               icon={"trash"}
@@ -62,7 +75,10 @@ const SharePageDialog = ({
                 minimal
                 icon={"plus"}
                 onClick={() => {
-                  setNotebooks([...notebooks, {workspace: currentworkspace, app:2}]);
+                  setNotebooks([
+                    ...notebooks,
+                    { workspace: currentworkspace, app: 2 },
+                  ]);
                   setCurrentWorkspace("");
                 }}
               />
@@ -85,6 +101,25 @@ const SharePageDialog = ({
       </div>
     </Dialog>
   );
+};
+
+export const render = (props: Props) => {
+  const parent = document.createElement("div");
+  parent.id = "samepage-share-page-dialog";
+  document.body.appendChild(parent);
+
+  const onClose = () => {
+    ReactDOM.unmountComponentAtNode(parent);
+    parent.remove();
+  };
+  ReactDOM.render(
+    React.createElement(SharePageDialog, {
+      ...props,
+      onClose,
+    }),
+    parent
+  );
+  return onClose;
 };
 
 export default SharePageDialog;
