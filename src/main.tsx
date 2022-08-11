@@ -31,9 +31,13 @@ const main = async () => {
       }
     },
     removeCommand: ({ label }) => {
-      console.log(
-        `Could not unregister the ${label} command. Does LogSeq support it?`
-      );
+      const key = label.replace(/ /g, "-").toLowerCase();
+      if (commandsRegistered.has(key)) {
+        logseq.App.unregister_plugin_simple_command(
+          `${logseq.baseInfo.id}/${key}`
+        );
+        commandsRegistered.delete(key);
+      }
     },
     onAppEventHandler: (event) => {
       console.log("App Event", event);

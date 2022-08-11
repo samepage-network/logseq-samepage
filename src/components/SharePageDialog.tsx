@@ -17,16 +17,19 @@ type OnSubmitProps = {
 type Props = {
   onSubmit: (p: OnSubmitProps) => void;
   notebookPageId: string;
+  apps: { id: number; name: string }[];
 };
 
 const SharePageDialog = ({
   onClose,
   onSubmit,
   notebookPageId,
+  apps,
 }: {
   onClose: () => void;
 } & Props) => {
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
+  const [currentApp, setCurrentApp] = useState<number>();
   const [currentworkspace, setCurrentWorkspace] = useState("");
   const [loading, setLoading] = useState(false);
   const onClick = useCallback(() => {
@@ -47,10 +50,7 @@ const SharePageDialog = ({
       isCloseButtonShown={false}
       autoFocus={false}
     >
-      <div
-        className={Classes.DIALOG_BODY}
-        //   onKeyDown={onKeyDown}
-      >
+      <div className={Classes.DIALOG_BODY}>
         <p>
           Sharing this page means that all notebooks with access to it will be
           able to edit its child blocks.
@@ -68,18 +68,32 @@ const SharePageDialog = ({
           </div>
         ))}
         <Label>
-          Notebook
+          App
+          <select
+            value={currentApp}
+            onChange={(e) => setCurrentApp(Number(e.target.value))}
+          >
+            {apps.map((app) => (
+              <option value={app.id}>{app.name}</option>
+            ))}
+          </select>
+        </Label>
+        <Label>
+          Workspace
           <InputGroup
             rightElement={
               <Button
                 minimal
                 icon={"plus"}
+                disabled={!currentApp || !currentworkspace}
                 onClick={() => {
-                  setNotebooks([
-                    ...notebooks,
-                    { workspace: currentworkspace, app: 2 },
-                  ]);
-                  setCurrentWorkspace("");
+                  if (currentApp && currentworkspace) {
+                    setNotebooks([
+                      ...notebooks,
+                      { workspace: currentworkspace, app: currentApp },
+                    ]);
+                    setCurrentWorkspace("");
+                  }
                 }}
               />
             }
