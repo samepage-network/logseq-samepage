@@ -22,6 +22,6 @@ jobs:
       - name: build
         run: node scripts/build.js
       - name: package
-        run: zip -jq dist/logseq.zip README.md dist/main.js dist/main.css index.html logo.svg package.json
+        run: zip -jq dist/logseq.zip README.md dist/main.js dist/main.css dist/normalize.css dist/blueprint.css dist/blueprint-icons.css index.html logo.svg package.json
       - name: deploy
         run: aws s3 cp dist/logseq.zip s3://samepage.network/extensions/logseq.zip
