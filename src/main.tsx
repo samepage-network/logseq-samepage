@@ -18,16 +18,28 @@ const main = async () => {
   const workspace = await logseq.App.getCurrentGraph().then(
     (info) => info?.name || ""
   );
+  const commandsRegistered = new Set<string>(); // logseq isnt idempotent -.-
   const unloadSamePageClient = setupSamePageClient({
     isAutoConnect: logseq.settings?.["auto-connect"] as boolean,
     app: 2,
     workspace,
-    addCommand: ({ label, callback }) =>
-      logseq.App.registerCommandPalette({ label, key: label }, callback),
+    addCommand: ({ label, callback }) => {
+      const key = label.replace(/ /g, "-").toLowerCase();
+      if (!commandsRegistered.has(key)) {
+        logseq.App.registerCommandPalette({ label, key }, callback);
+        commandsRegistered.add(key);
+      }
+    },
     removeCommand: ({ label }) => {
       console.log(
         `Could not unregister the ${label} command. Does LogSeq support it?`
       );
+    },
+    onAppEventHandler: (event) => {
+      console.log("App Event", event);
+    },
+    onUsageEventHandler: (event) => {
+      console.log("App Event", event);
     },
   });
   const unloadSharePageWithGraph = setupSharePageWithNotebook({

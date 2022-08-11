@@ -1,4 +1,11 @@
 const esbuild = require("esbuild");
+const fs = require("fs");
+const path = require("path");
+const files = [
+  "node_modules/normalize.css/normalize.css",
+  "node_modules/@blueprintjs/icons/lib/css/blueprint-icons.css",
+  "node_modules/@blueprintjs/core/lib/css/blueprint.css",
+];
 
 esbuild
   .build({
@@ -7,10 +14,10 @@ esbuild
     bundle: true,
     define: {
       "process.env.BLUEPRINT_NAMESPACE": '"bp4"',
-      "process.env.WEB_SOCKET_URL": '"wss://ws.samepage.network"',
       "process.env.NODE_ENV": '"production"',
     },
   })
   .then(() => {
+    files.forEach((f) => fs.cpSync(f, path.join("dist", path.basename(f))));
     console.log("done");
   });

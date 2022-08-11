@@ -111,6 +111,7 @@ export const render = (props: Props) => {
   const onClose = () => {
     ReactDOM.unmountComponentAtNode(parent);
     parent.remove();
+    logseq.hideMainUI();
   };
   ReactDOM.render(
     React.createElement(SharePageDialog, {
@@ -119,6 +120,7 @@ export const render = (props: Props) => {
     }),
     parent
   );
+  logseq.showMainUI();
   return onClose;
 };
 
