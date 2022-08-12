@@ -1,5 +1,5 @@
 import { Notebook } from "@samepage/client/types";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import ReactDOM from "react-dom";
 import {
   Button,
@@ -8,7 +8,9 @@ import {
   Label,
   InputGroup,
   Intent,
+  MenuItem,
 } from "@blueprintjs/core";
+import { Select } from "@blueprintjs/select";
 
 type OnSubmitProps = {
   notebookPageId: string;
@@ -20,6 +22,8 @@ type Props = {
   apps: { id: number; name: string }[];
 };
 
+const AppSelect = Select.ofType<number>();
+
 const SharePageDialog = ({
   onClose,
   onSubmit,
@@ -28,8 +32,12 @@ const SharePageDialog = ({
 }: {
   onClose: () => void;
 } & Props) => {
+  const appNameById = useMemo(
+    () => Object.fromEntries(apps.map((a) => [a.id, a.name])),
+    []
+  );
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  const [currentApp, setCurrentApp] = useState<number>();
+  const [currentApp, setCurrentApp] = useState<number>(apps[0].id);
   const [currentworkspace, setCurrentWorkspace] = useState("");
   const [loading, setLoading] = useState(false);
   const onClick = useCallback(() => {
@@ -67,40 +75,58 @@ const SharePageDialog = ({
             />
           </div>
         ))}
-        <Label>
-          App
-          <select
-            value={currentApp}
-            onChange={(e) => setCurrentApp(Number(e.target.value))}
-          >
+        <div style={{ display: "flex", gap: "16px" }}>
+          <Label style={{ maxWidth: "120px", width: "100%" }}>
+            App
+            <AppSelect
+              items={apps.map((a) => a.id)}
+              activeItem={currentApp}
+              onItemSelect={(e) => setCurrentApp(e)}
+              itemRenderer={(item, { modifiers, handleClick }) => (
+                <MenuItem
+                  key={item}
+                  text={appNameById[item]}
+                  active={modifiers.active}
+                  onClick={handleClick}
+                />
+              )}
+              filterable={false}
+              popoverProps={{
+                minimal: true,
+                captureDismiss: true,
+              }}
+            >
+              <Button
+                text={appNameById[currentApp]}
+                rightIcon="double-caret-vertical"
+              />
+            </AppSelect>
             {apps.map((app) => (
               <option value={app.id}>{app.name}</option>
             ))}
-          </select>
-        </Label>
-        <Label>
-          Workspace
-          <InputGroup
-            rightElement={
-              <Button
-                minimal
-                icon={"plus"}
-                disabled={!currentApp || !currentworkspace}
-                onClick={() => {
-                  if (currentApp && currentworkspace) {
-                    setNotebooks([
-                      ...notebooks,
-                      { workspace: currentworkspace, app: currentApp },
-                    ]);
-                    setCurrentWorkspace("");
-                  }
-                }}
-              />
-            }
-            value={currentworkspace}
-            onChange={(e) => setCurrentWorkspace(e.target.value)}
+          </Label>
+          <Label style={{ flexGrow: 1 }}>
+            Workspace
+            <InputGroup
+              value={currentworkspace}
+              onChange={(e) => setCurrentWorkspace(e.target.value)}
+            />
+          </Label>
+          <Button
+            minimal
+            icon={"plus"}
+            disabled={!currentApp || !currentworkspace}
+            onClick={() => {
+              if (currentApp && currentworkspace) {
+                setNotebooks([
+                  ...notebooks,
+                  { workspace: currentworkspace, app: currentApp },
+                ]);
+                setCurrentWorkspace("");
+              }
+            }}
           />
-        </Label>
+        </div>
       </div>
       <div className={Classes.DIALOG_FOOTER}>
         <div className={Classes.DIALOG_FOOTER_ACTIONS}>
