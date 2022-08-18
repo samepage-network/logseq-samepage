@@ -1,4 +1,4 @@
-import { Notebook } from "@samepage/client/types";
+import type { Notebook, AppId, Apps } from "@samepage/shared";
 import React, { useCallback, useMemo, useState } from "react";
 import ReactDOM from "react-dom";
 import {
@@ -14,12 +14,13 @@ import { Select } from "@blueprintjs/select";
 
 type OnSubmitProps = {
   notebookPageId: string;
-} & Notebook;
+  notebooks: Notebook[];
+};
 
 type Props = {
   onSubmit: (p: OnSubmitProps) => void;
   notebookPageId: string;
-  apps: { id: number; name: string }[];
+  apps: Apps;
 };
 
 const AppSelect = Select.ofType<number>();
@@ -32,19 +33,13 @@ const SharePageDialog = ({
 }: {
   onClose: () => void;
 } & Props) => {
-  const appNameById = useMemo(
-    () => Object.fromEntries(apps.map((a) => [a.id, a.name])),
-    []
-  );
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  const [currentApp, setCurrentApp] = useState<number>(apps[0].id);
+  const [currentApp, setCurrentApp] = useState<number>(2);
   const [currentworkspace, setCurrentWorkspace] = useState("");
   const [loading, setLoading] = useState(false);
   const onClick = useCallback(() => {
     setLoading(true);
-    Promise.all(
-      Array.from(notebooks).map((n) => onSubmit({ ...n, notebookPageId }))
-    )
+    Promise.resolve(onSubmit({ notebooks, notebookPageId }))
       .then(onClose)
       .catch(() => setLoading(false));
   }, [onSubmit, onClose, notebooks]);
@@ -79,13 +74,13 @@ const SharePageDialog = ({
           <Label style={{ maxWidth: "120px", width: "100%" }}>
             App
             <AppSelect
-              items={apps.map((a) => a.id)}
+              items={Object.keys(apps).map((a) => Number(a))}
               activeItem={currentApp}
               onItemSelect={(e) => setCurrentApp(e)}
               itemRenderer={(item, { modifiers, handleClick }) => (
                 <MenuItem
                   key={item}
-                  text={appNameById[item]}
+                  text={apps[item].name}
                   active={modifiers.active}
                   onClick={handleClick}
                 />
@@ -97,12 +92,12 @@ const SharePageDialog = ({
               }}
             >
               <Button
-                text={appNameById[currentApp]}
+                text={apps[currentApp].name}
                 rightIcon="double-caret-vertical"
               />
             </AppSelect>
-            {apps.map((app) => (
-              <option value={app.id}>{app.name}</option>
+            {Object.keys(apps).map((app) => (
+              <option value={app}>{apps[Number(app)].name}</option>
             ))}
           </Label>
           <Label style={{ flexGrow: 1 }}>
@@ -120,7 +115,7 @@ const SharePageDialog = ({
               if (currentApp && currentworkspace) {
                 setNotebooks([
                   ...notebooks,
-                  { workspace: currentworkspace, app: currentApp },
+                  { workspace: currentworkspace, app: currentApp as AppId },
                 ]);
                 setCurrentWorkspace("");
               }
@@ -141,27 +136,6 @@ const SharePageDialog = ({
       </div>
     </Dialog>
   );
-};
-
-export const render = (props: Props) => {
-  const parent = document.createElement("div");
-  parent.id = "samepage-share-page-dialog";
-  document.body.appendChild(parent);
-
-  const onClose = () => {
-    ReactDOM.unmountComponentAtNode(parent);
-    parent.remove();
-    logseq.hideMainUI();
-  };
-  ReactDOM.render(
-    React.createElement(SharePageDialog, {
-      ...props,
-      onClose,
-    }),
-    parent
-  );
-  logseq.showMainUI();
-  return onClose;
 };
 
 export default SharePageDialog;
