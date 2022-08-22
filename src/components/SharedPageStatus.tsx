@@ -11,13 +11,13 @@ import {
   Tooltip,
 } from "@blueprintjs/core";
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import type { loadSharePageWithNotebook } from "@samepage/client";
+import type { setupSharePageWithNotebook } from "@samepage/client";
 import type { Apps, Notebook, AppId } from "@samepage/shared";
 import { Select } from "@blueprintjs/select";
 import { v4 } from "uuid";
 import { createRoot } from "react-dom/client";
 
-type SharePageReturn = ReturnType<typeof loadSharePageWithNotebook>;
+type SharePageReturn = ReturnType<typeof setupSharePageWithNotebook>;
 
 type Props = {
   parentUuid: string;
