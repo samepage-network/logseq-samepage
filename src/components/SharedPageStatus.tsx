@@ -5,57 +5,109 @@ import {
   InputGroup,
   Intent,
   Label,
+  MenuItem,
   Popover,
   Spinner,
   Tooltip,
 } from "@blueprintjs/core";
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import ReactDOM from "react-dom";
-import { removeSharedPage } from "../messages/sharePageWithGraph";
+import type { loadSharePageWithNotebook } from "@samepage/client";
+import type { Apps, Notebook, AppId } from "@samepage/shared";
+import { Select } from "@blueprintjs/select";
+import { v4 } from "uuid";
+import { createRoot } from "react-dom/client";
 
-type Notebook = {
-  workspace: string;
-  app: number;
-};
+type SharePageReturn = ReturnType<typeof loadSharePageWithNotebook>;
 
 type Props = {
-  parentUid: string;
-};
+  parentUuid: string;
+  apps: Apps;
+} & Pick<
+  SharePageReturn,
+  "disconnectPage" | "sharePage" | "forcePushPage" | "listConnectedNotebooks"
+>;
 
-const ConnectedNotebooks = ({ uid }: { uid: string }) => {
+const formatVersion = (s: number) =>
+  s ? new Date(s * 1000).toLocaleString() : "unknown";
+
+const ConnectedNotebooks = ({
+  uuid,
+  listConnectedNotebooks,
+}: {
+  uuid: string;
+  listConnectedNotebooks: Props["listConnectedNotebooks"];
+}) => {
   const [loading, setLoading] = useState(true);
-  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
+  const [notebooks, setNotebooks] = useState<
+    Awaited<ReturnType<Props["listConnectedNotebooks"]>>["notebooks"]
+  >([]);
+  const [networks, setNetworks] = useState<
+    Awaited<ReturnType<Props["listConnectedNotebooks"]>>["networks"]
+  >([]);
   useEffect(() => {
-    apiClient<{ notebooks: Notebook[] }>({
-      method: "list-page-notebooks",
-      data: { uid },
-    })
-      .then((r) => setNotebooks(r.notebooks))
+    listConnectedNotebooks(uuid)
+      .then((r) => {
+        setNotebooks(r.notebooks);
+        setNetworks(r.networks);
+      })
       .finally(() => setLoading(false));
   }, [setLoading]);
   return (
-    <div className="flex p-4 rounded-md">
+    <div className="flex p-4 rounded-md flex-col">
       {loading ? (
         <Spinner />
       ) : (
-        <ul>
-          {notebooks.map((c) => (
-            <li key={`${c.app}-${c.workspace}`}>{c.workspace}</li>
-          ))}
-        </ul>
+        <>
+          <h3>Notebooks:</h3>
+          <ul>
+            {notebooks.map((c) => (
+              <li key={`${c.app}-${c.workspace}`}>
+                <div className="flex items-center justify-between">
+                  <span>
+                    {c.app}/{c.workspace}
+                  </span>
+                  <span className="opacity-75 text-gray-600 text-sm">
+                    {formatVersion(c.version)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <h3>Networks:</h3>
+          <ul>
+            {networks.map((c) => (
+              <li key={`${c.app}-${c.workspace}`}>
+                <div className="flex items-center justify-between">
+                  <span>
+                    {c.app}/{c.workspace}
+                  </span>
+                  <span className="opacity-75 text-gray-600 text-sm">
+                    {formatVersion(c.version)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );
 };
 
+const AppSelect = Select.ofType<string>();
+
 const InviteNotebook = ({
-  parentUid,
+  parentUuid,
   loading,
   setLoading,
+  sharePage,
+  apps = {},
 }: {
   loading: boolean;
-  parentUid: string;
+  parentUuid: string;
   setLoading: (f: boolean) => void;
+  sharePage: SharePageReturn["sharePage"];
+  apps?: Record<string, { name: string }>;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [innerLoading, setInnerLoading] = useState(false);
@@ -63,39 +115,21 @@ const InviteNotebook = ({
     setIsOpen(false);
     setLoading(false);
   }, [setIsOpen, setLoading]);
-  const [workspace, setWorkspace] = useState("");
+  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
+  const [currentApp, setCurrentApp] = useState(Object.keys(apps)[0]);
+  const [currentworkspace, setCurrentWorkspace] = useState("");
   const onSubmit = useCallback(() => {
     setInnerLoading(true);
-    return apiClient<{ id: string; created: boolean }>({
-      // TODO replace with just a get for the id
-      method: "init-shared-page",
-      data: {
-        uid: parentUid,
-      },
-    })
-      .then((r) => {
-        const title = getPageTitleByPageUid(parentUid);
-        sendToNotebook({
-          graph: workspace,
-          operation: "SHARE_PAGE",
-          data: {
-            id: r.id,
-            uid: parentUid,
-            title: title || getTextByBlockUid(parentUid),
-            isPage: !!title,
-          },
-        });
-        renderToast({
-          id: "share-page-success",
-          content: `Successfully shared page with ${workspace}! We will now await for them to accept.`,
-        });
-        closeDialog();
-      })
+    sharePage({ notebookPageId: parentUuid, notebooks })
+      .then(closeDialog)
       .finally(() => setInnerLoading(false));
-  }, [parentUid, workspace, closeDialog, setInnerLoading]);
+  }, [parentUuid, currentworkspace, closeDialog, setInnerLoading]);
   return (
     <>
-      <Tooltip content={"Invite Notebook"}>
+      <Tooltip
+        content={"Invite Notebook"}
+        portalContainer={window.parent.document.body}
+      >
         <Button
           icon={"plus"}
           minimal
@@ -114,15 +148,75 @@ const InviteNotebook = ({
         canEscapeKeyClose
         autoFocus={false}
         enforceFocus={false}
+        portalContainer={window.parent.document.body}
       >
         <div className={Classes.DIALOG_BODY}>
-          <Label>
-            Graph
-            <InputGroup
-              value={workspace}
-              onChange={(e) => setWorkspace(e.target.value)}
+          {notebooks.map((g, i) => (
+            <div
+              className="flex gap-4 items-center"
+              key={`${g.app}/${g.workspace}`}
+            >
+              <span className={"flex-grow"}>
+                {apps[g.app].name} / {g.workspace}
+              </span>
+              <Button
+                minimal
+                icon={"trash"}
+                onClick={() =>
+                  setNotebooks(notebooks.filter((_, j) => j !== i))
+                }
+              />
+            </div>
+          ))}
+          <div className="flex gap-4 items-center">
+            <Label style={{ maxWidth: "120px", width: "100%" }}>
+              App
+              <AppSelect
+                items={Object.keys(apps)}
+                activeItem={currentApp}
+                onItemSelect={(e) => setCurrentApp(e)}
+                itemRenderer={(item, { modifiers, handleClick }) => (
+                  <MenuItem
+                    key={item}
+                    text={apps[item].name}
+                    active={modifiers.active}
+                    onClick={handleClick}
+                  />
+                )}
+                filterable={false}
+                popoverProps={{
+                  minimal: true,
+                  captureDismiss: true,
+                }}
+              >
+                <Button
+                  text={apps[currentApp].name}
+                  rightIcon="double-caret-vertical"
+                />
+              </AppSelect>
+            </Label>
+            <Label>
+              Workspace
+              <InputGroup
+                value={currentworkspace}
+                onChange={(e) => setCurrentWorkspace(e.target.value)}
+              />
+            </Label>
+            <Button
+              minimal
+              icon={"plus"}
+              onClick={() => {
+                setNotebooks([
+                  ...notebooks,
+                  {
+                    app: Number(currentApp) as AppId,
+                    workspace: currentworkspace,
+                  },
+                ]);
+                setCurrentWorkspace("");
+              }}
             />
-          </Label>
+          </div>
         </div>
         <div className={Classes.DIALOG_FOOTER}>
           <div className={Classes.DIALOG_FOOTER_ACTIONS}>
@@ -135,7 +229,7 @@ const InviteNotebook = ({
               text={"Send"}
               intent={Intent.PRIMARY}
               onClick={onSubmit}
-              disabled={innerLoading}
+              disabled={innerLoading || !notebooks.length}
             />
           </div>
         </div>
@@ -144,7 +238,14 @@ const InviteNotebook = ({
   );
 };
 
-const SharedPageStatus = ({ parentUid }: Props) => {
+const SharedPageStatus = ({
+  parentUuid,
+  sharePage,
+  disconnectPage,
+  forcePushPage,
+  listConnectedNotebooks,
+  apps,
+}: Props) => {
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
   return (
@@ -155,14 +256,21 @@ const SharedPageStatus = ({ parentUid }: Props) => {
       <i>Shared</i>
       <Tooltip content={"Notebooks Connected"}>
         <Popover
-          content={<ConnectedNotebooks uid={parentUid} />}
+          content={
+            <ConnectedNotebooks
+              uuid={parentUuid}
+              listConnectedNotebooks={listConnectedNotebooks}
+            />
+          }
           target={<Button icon={"info-sign"} minimal disabled={loading} />}
         />
       </Tooltip>
       <InviteNotebook
-        parentUid={parentUid}
+        parentUuid={parentUuid}
         loading={loading}
         setLoading={setLoading}
+        sharePage={sharePage}
+        apps={apps}
       />
       <Tooltip content={"Disconnect Shared Page"}>
         <Button
@@ -171,21 +279,18 @@ const SharedPageStatus = ({ parentUid }: Props) => {
           minimal
           onClick={() => {
             setLoading(true);
-            apiClient<{ id: string; created: boolean }>({
-              method: "disconnect-shared-page",
-              data: { uid: parentUid },
-            })
-              .then(() => {
-                removeSharedPage(parentUid);
-                containerRef.current.parentElement.remove();
-              })
-              .catch(() =>
-                renderToast({
-                  content: `Successfully disconnected ${parentUid} from being shared.`,
-                  id: "disconnect-shared-page",
-                })
-              )
-              .finally(() => setLoading(false));
+            disconnectPage(parentUuid).finally(() => setLoading(false));
+          }}
+        />
+      </Tooltip>
+      <Tooltip content={"Force Push Local Copy"}>
+        <Button
+          disabled={loading}
+          icon={"warning-sign"}
+          minimal
+          onClick={() => {
+            setLoading(true);
+            forcePushPage(parentUuid).finally(() => setLoading(false));
           }}
         />
       </Tooltip>
@@ -193,56 +298,20 @@ const SharedPageStatus = ({ parentUid }: Props) => {
   );
 };
 
-const renderWithUnmount = (el: React.ReactElement, p: HTMLElement): void => {
-  ReactDOM.render(el, p);
-  const unmountObserver = new MutationObserver((ms) => {
-    const parentRemoved = ms
-      .flatMap((m) => Array.from(m.removedNodes))
-      .some((n) => n === p || n.contains(p));
-    if (parentRemoved) {
-      unmountObserver.disconnect();
-      ReactDOM.unmountComponentAtNode(p);
-      document.body.dispatchEvent(
-        new CustomEvent(
-          `roamjs:${process.env.ROAMJS_EXTENSION_ID}:unregister`,
-          {
-            detail: {
-              reactRoots: [p],
-              observers: [unmountObserver],
-            },
-          }
-        )
-      );
+export const render = (props: Props) => {
+  const id = v4();
+  window.logseq.provideUI({
+    path: `div[data-logseq-shared-${props.parentUuid}=true]`,
+    key: `status-${props.parentUuid}`,
+    template: `<div id="${id}"></div>`,
+  });
+  setTimeout(() => {
+    const parent = window.parent.document.getElementById(id);
+    if (parent) {
+      const root = createRoot(parent);
+      root.render(<SharedPageStatus {...props} />);
     }
   });
-  unmountObserver.observe(document.body, { childList: true, subtree: true });
-  document.body.dispatchEvent(
-    new CustomEvent(`roamjs:${process.env.ROAMJS_EXTENSION_ID}:register`, {
-      detail: {
-        reactRoots: [p],
-        observers: [unmountObserver],
-      },
-    })
-  );
-};
-
-export const render = (props: Props) => {
-  Array.from(
-    document.querySelectorAll(`[data-roamjs-shared-${props.parentUid}="true"]`)
-  )
-    .filter(
-      (cp) =>
-        cp.getElementsByClassName("samepage-shared-page-status").length === 0
-    )
-    .forEach((containerParent) => {
-      const parent = document.createElement("div");
-      const h = containerParent.querySelector("h1.rm-title-display");
-      containerParent.insertBefore(
-        parent,
-        h?.parentElement?.nextElementSibling || null
-      );
-      renderWithUnmount(<SharedPageStatus {...props} />, parent);
-    });
 };
 
 export default SharedPageStatus;

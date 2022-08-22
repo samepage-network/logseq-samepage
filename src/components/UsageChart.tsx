@@ -16,6 +16,7 @@ const UsageChart = ({ onClose, ...stats }: OverlayProps<Props>) => {
       title={"Usage Chart"}
       autoFocus={false}
       enforceFocus={false}
+      portalContainer={window.parent.document.body}
     >
       <div className={Classes.DIALOG_BODY}>
         <div className={"flex justify-between items-center"}>

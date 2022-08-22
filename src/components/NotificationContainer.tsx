@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Spinner } from "@blueprintjs/core";
 import type { BlockEntity } from "@logseq/libs/dist/LSPlugin.user";
-import { render as renderToast } from "./Toast";
 import { v4 } from "uuid";
 
 const NOTIFICATION_EVENT = "roamjs:samepage:notification";
@@ -41,7 +40,7 @@ const getSubTree = ({
   key: string;
   tree?: BlockEntity[];
 }): BlockEntity => {
-  const node = tree.find((s) => toFlexRegex(key).test(s.text.trim()));
+  const node = tree.find((s) => toFlexRegex(key).test(s.content.trim()));
   if (node) return node;
   return {
     uuid: "",
@@ -73,6 +72,7 @@ const ActionButtons = ({
       <div className={"flex gap-8"}>
         {actions.map((action) => (
           <Button
+            key={action.label}
             text={action.label}
             onClick={() => {
               setLoading(true);
@@ -81,17 +81,14 @@ const ActionButtons = ({
                 .then(onSuccess)
                 .catch((e) => {
                   console.error("Failed to process notification:", e);
-                  renderToast({
-                    id: "notification-error",
-                    content: `Failed to process notification: ${
-                      e.message || e
-                    }`,
-                    intent: "danger",
-                  });
+                  window.logseq.UI.showMsg(
+                    `Failed to process notification: ${e.message || e}`,
+                    "error"
+                  );
                 })
                 .finally(() => setLoading(false));
             }}
-            style={{ marginRight: "8px" }}
+            style={{ marginRight: "8px", textTransform: "capitalize" }}
             disabled={loading}
           />
         ))}
@@ -113,13 +110,15 @@ const NotificationContainer = ({ actions }: Props) => {
     window.logseq.DB.datascriptQuery(
       `[:find (pull ?b [:block/name]) :where [?b :block/name ?title] [(clojure.string/starts-with? ?title  "samepage/notifications/")]]`
     )
-      .then((pages: { name: string }[]) => {
+      .then((pages: [{ name: string }][]) => {
         return Promise.all(
           pages.map((block) =>
-            window.logseq.Editor.getPageBlocksTree(block.name).then((tree) => ({
-              tree,
-              uuid: block.name.replace(/^samepage\/notifications/, ""),
-            }))
+            window.logseq.Editor.getPageBlocksTree(block[0].name).then(
+              (tree) => ({
+                tree,
+                uuid: block[0].name.replace(/^samepage\/notifications/, ""),
+              })
+            )
           )
         );
       })
@@ -339,7 +338,7 @@ const NotificationContainer = ({ actions }: Props) => {
       ) : (
         <img
           onClick={() => setIsOpen(true)}
-          src={"https://roamjs.com/images/logo-low-res.png"}
+          src={"https://samepage.network/images/logo.png"}
           style={{
             borderRadius: "50%",
             height: 24,

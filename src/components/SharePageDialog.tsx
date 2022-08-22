@@ -1,6 +1,5 @@
 import type { Notebook, AppId, Apps } from "@samepage/shared";
 import React, { useCallback, useMemo, useState } from "react";
-import ReactDOM from "react-dom";
 import {
   Button,
   Classes,
@@ -52,6 +51,7 @@ const SharePageDialog = ({
       canEscapeKeyClose
       isCloseButtonShown={false}
       autoFocus={false}
+      portalContainer={window.parent.document.body}
     >
       <div className={Classes.DIALOG_BODY}>
         <p>
@@ -89,6 +89,7 @@ const SharePageDialog = ({
               popoverProps={{
                 minimal: true,
                 captureDismiss: true,
+                portalContainer: window.parent.document.body,
               }}
             >
               <Button
@@ -96,9 +97,6 @@ const SharePageDialog = ({
                 rightIcon="double-caret-vertical"
               />
             </AppSelect>
-            {Object.keys(apps).map((app) => (
-              <option value={app}>{apps[Number(app)].name}</option>
-            ))}
           </Label>
           <Label style={{ flexGrow: 1 }}>
             Workspace

@@ -1,6 +1,6 @@
 import { Classes, Dialog } from "@blueprintjs/core";
-import React, { useEffect, useMemo, useState } from "react";
-import ReactDOM from "react-dom";
+import React, { useEffect, useState } from "react";
+import type { OverlayProps } from "./renderOverlay";
 
 type Props = { notebookPageIds: string[] };
 
@@ -39,10 +39,7 @@ const PageLink = ({ uuid }: { uuid: string }) => {
 const SharedPagesDashboard = ({
   onClose,
   notebookPageIds,
-}: {
-  onClose: () => void;
-  notebookPageIds: string[];
-}) => {
+}: OverlayProps<Props>) => {
   return (
     <Dialog
       onClose={onClose}
@@ -50,6 +47,7 @@ const SharedPagesDashboard = ({
       title={"Shared Pages"}
       autoFocus={false}
       enforceFocus={false}
+      portalContainer={window.parent.document.body}
     >
       <div className={Classes.DIALOG_BODY}>
         {notebookPageIds.length ? (
@@ -66,24 +64,6 @@ const SharedPagesDashboard = ({
       </div>
     </Dialog>
   );
-};
-
-export const render = (props: Props) => {
-  const parent = document.createElement("div");
-  parent.id = "samepage-shared-pages-dashboard";
-  document.body.appendChild(parent);
-
-  const onClose = () => {
-    ReactDOM.unmountComponentAtNode(parent);
-    parent.remove();
-    logseq.hideMainUI();
-  };
-  ReactDOM.render(
-    <SharedPagesDashboard onClose={onClose} {...props} />,
-    parent
-  );
-  logseq.showMainUI();
-  return onClose;
 };
 
 export default SharedPagesDashboard;
