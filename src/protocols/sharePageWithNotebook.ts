@@ -25,14 +25,14 @@ const samepageToLogseq = (s: string) =>
   openIdb()
     .then((db) => db.get("samepage-to-logseq", s))
     .then((v) => v as string);
-const saveUid = (logseq: string, samepage: string) =>
+const saveIdMap = (logseq: string, samepage: string) =>
   openIdb().then((db) =>
     Promise.all([
       db.put("logseq-to-samepage", samepage, logseq),
       db.put("samepage-to-logseq", logseq, samepage),
     ])
   );
-const removeUid = (logseq: string, samepage: string) =>
+const removeIdMap = (logseq: string, samepage: string) =>
   openIdb().then((db) =>
     Promise.all([
       db.delete("logseq-to-samepage", logseq),
@@ -40,7 +40,7 @@ const removeUid = (logseq: string, samepage: string) =>
     ])
   );
 const removeLogseqUuid = (logseq: string) =>
-  logseqToSamepage(logseq).then((samepage) => removeUid(logseq, samepage));
+  logseqToSamepage(logseq).then((samepage) => removeIdMap(logseq, samepage));
 let db: IDBPDatabase;
 const openIdb = async () =>
   db ||
@@ -72,7 +72,7 @@ const toAtJson = async ({
           (identifier) =>
             identifier ||
             Promise.resolve(v4()).then((samepageUuid) =>
-              saveUid(n.uid, samepageUuid).then(() => samepageUuid)
+              saveIdMap(n.uid, samepageUuid).then(() => samepageUuid)
             )
         )
         .then(async (identifier) => {
@@ -119,14 +119,16 @@ const flattenTree = <T extends { children?: T[]; uuid?: string }>(
   ]);
 
 const calculateState = async (notebookPageId: string) => {
-  const nodes = await window.logseq.Editor.getPageBlocksTree(notebookPageId);
-  const parentUuid = await window.logseq.Editor.getBlock(notebookPageId)
+  const nodes = await window.logseq.Editor.getPage(Number(notebookPageId)).then(
+    (page) => (page ? window.logseq.Editor.getPageBlocksTree(page.uuid) : [])
+  );
+  const parentUuid = await window.logseq.Editor.getBlock(Number(notebookPageId))
     .then((b) => window.logseq.Editor.getBlock(b?.parent.id || 0))
     .then((p) => p?.uuid || "");
-  const title = await window.logseq.Editor.getPage(notebookPageId).then(
+  const title = await window.logseq.Editor.getPage(Number(notebookPageId)).then(
     (page) =>
       page?.name ||
-      window.logseq.Editor.getBlock(notebookPageId).then(
+      window.logseq.Editor.getBlock(Number(notebookPageId)).then(
         (block) => block?.uuid || ""
       )
   );
@@ -169,7 +171,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
   } = loadSharePageWithNotebook({
     renderInitPage: async (args) => {
       const notebookPageId = await logseq.Editor.getCurrentPage().then(
-        (p) => p?.uuid || ""
+        (p) => p?.id.toString() || ""
       );
       renderOverlay({
         Overlay: SharePageDialog,
@@ -219,8 +221,8 @@ const setupSharePageWithNotebook = (apps: Apps) => {
           const parentUid = anno.attributes.parent;
           initialPromise = (
             parentUid
-              ? window.logseq.Editor.getBlock(notebookPageId)
-              : window.logseq.Editor.getPage(notebookPageId)
+              ? window.logseq.Editor.getBlock(Number(notebookPageId))
+              : window.logseq.Editor.getPage(Number(notebookPageId))
           )
             .then((node) => {
               if (node) {
@@ -228,9 +230,12 @@ const setupSharePageWithNotebook = (apps: Apps) => {
                   node.name || (node as BlockEntity).content;
                 if (existingTitle !== title) {
                   if (parentUid) {
-                    return window.logseq.Editor.updateBlock(
-                      notebookPageId,
-                      title
+                    return window.logseq.Editor.getBlock(
+                      Number(notebookPageId)
+                    ).then(
+                      (block) =>
+                        block &&
+                        window.logseq.Editor.updateBlock(block.uuid, title)
                     );
                   } else {
                     return window.logseq.Editor.renamePage(
@@ -240,7 +245,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
                   }
                 }
               } else {
-                throw new Error(`Missing page with uuid: ${notebookPageId}`);
+                throw new Error(`Missing page with id: ${notebookPageId}`);
               }
             })
             .catch((e) => {
@@ -274,12 +279,16 @@ const setupSharePageWithNotebook = (apps: Apps) => {
           .map(({ uuid, ...n }) => [uuid, n])
       );
       const actualTreeMapping = await window.logseq.Editor.getPage(
-        notebookPageId
+        Number(notebookPageId)
       )
         .then((page) =>
-          page ? window.logseq.Editor.getPageBlocksTree(page.originalName) : []
+          page
+            ? window.logseq.Editor.getPageBlocksTree(page.originalName).then(
+                (tree) => tree || []
+              )
+            : []
         )
-        .then((tree) =>
+        .then((tree = []) =>
           Object.fromEntries(
             //@ts-ignore guaranteed BlockEntity tree
             flattenTree(tree, notebookPageId).map(({ uuid, ...n }) => [uuid, n])
@@ -300,8 +309,8 @@ const setupSharePageWithNotebook = (apps: Apps) => {
       const expectedUuids = new Set(
         Object.values(expectedSamepageToLogseq).filter((r) => !!r)
       );
-      const uuidsToDelete = Object.keys(actualTreeMapping).filter((k) =>
-        !expectedUuids.has(k)
+      const uuidsToDelete = Object.keys(actualTreeMapping).filter(
+        (k) => !expectedUuids.has(k)
       );
       const uuidsToUpdate = Object.entries(expectedSamepageToLogseq).filter(
         ([, k]) => !!actualTreeMapping[k]
@@ -328,13 +337,38 @@ const setupSharePageWithNotebook = (apps: Apps) => {
             uuidsToCreate.map(([samepageUuid]) => {
               const { parentUuid, order, ...node } =
                 expectedTreeMapping[samepageUuid];
-              return window.logseq.Editor.insertBlock(
+              return (
                 parentUuid === notebookPageId
-                  ? notebookPageId
-                  : expectedSamepageToLogseq[parentUuid],
-                node.content
+                  ? window.logseq.Editor.getPage(Number(notebookPageId)).then(
+                      (page) =>
+                        page &&
+                        window.logseq.Editor.insertBlock(
+                          page.uuid,
+                          node.content
+                        ).then(
+                          (block) =>
+                            block &&
+                            window.logseq.Editor.upsertBlockProperty(
+                              block.uuid,
+                              "id",
+                              block.uuid
+                            ).then(() => block.uuid)
+                        )
+                    )
+                  : window.logseq.Editor.insertBlock(
+                      expectedSamepageToLogseq[samepageUuid],
+                      node.content
+                    ).then(
+                      (block) =>
+                        block &&
+                        window.logseq.Editor.upsertBlockProperty(
+                          block.uuid,
+                          "id",
+                          block.uuid
+                        ).then(() => block.uuid)
+                    )
               )
-                .then((block) => saveUid(block?.uuid || "", samepageUuid))
+                .then((uuid) => saveIdMap(uuid || "", samepageUuid))
                 .catch((e) => {
                   return Promise.reject(
                     new Error(
@@ -400,18 +434,22 @@ const setupSharePageWithNotebook = (apps: Apps) => {
       actions: {
         accept: ({ app, workspace, pageUuid }) =>
           // TODO support block or page tree as a user action
-          window.logseq.Editor.createPage(`samepage/page/${pageUuid}`)
-            .then((page) =>
-              window.logseq.Editor.upsertBlockProperty(
-                page?.uuid || "",
-                "id",
-                page?.uuid || ""
-              ).then(() => page)
-            )
+          window.logseq.Editor.createPage(
+            `samepage/page/${pageUuid}`,
+            {},
+            { createFirstBlock: false }
+          )
+            // .then((page) =>
+            //   window.logseq.Editor.upsertBlockProperty(
+            //     page?.uuid || "",
+            //     "id",
+            //     page?.uuid || ""
+            //   ).then(() => page)
+            // )
             .then((page) =>
               joinPage({
                 pageUuid,
-                notebookPageId: page?.uuid || "",
+                notebookPageId: page?.id.toString() || "",
                 source: { app: Number(app) as AppId, workspace },
               }).catch((e) => {
                 window.logseq.Editor.deletePage(`samepage/page/${pageUuid}`);
@@ -431,15 +469,15 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     const title = h.textContent || "";
     const page = await window.logseq.Editor.getPage(title);
     if (!page) return;
-    const { id: dbId, uuid = "" } = page;
-    if (!isTargeted(uuid)) return;
-    const attribute = `data-logseq-shared-${uuid}`;
+    const { id: dbId } = page;
+    if (!isTargeted(dbId.toString())) return;
+    const attribute = `data-logseq-shared-${dbId}`;
     const containerParent = h.parentElement;
     if (containerParent && !containerParent.hasAttribute(attribute)) {
       if (notebookDbIds.has(dbId)) {
         containerParent.setAttribute(attribute, "true");
         renderStatus({
-          parentUuid: uuid,
+          parentUuid: dbId.toString(),
           sharePage,
           disconnectPage,
           forcePushPage,
@@ -476,11 +514,11 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     subtree: true,
   });
   const statusListener = ((e: CustomEvent) => {
-    const uid = e.detail as string;
+    const id = e.detail as string;
     Array.from(
       document.querySelectorAll<HTMLHeadingElement>("h1.rm-title-display")
     ).forEach((header) => {
-      renderStatusUnderHeading((u) => u === uid, header);
+      renderStatusUnderHeading((u) => u === id, header);
     });
   }) as EventListener;
   document.body.addEventListener(STATUS_EVENT_NAME, statusListener);
@@ -498,7 +536,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
       if (notebookPage && notebookDbIds.has(notebookPage.id)) {
         window.clearTimeout(updateTimeout);
         updateTimeout = window.setTimeout(async () => {
-          const notebookPageId = notebookPage.name;
+          const notebookPageId = notebookPage.id.toString();
           const doc = await calculateState(notebookPageId);
           updatePage({
             notebookPageId,

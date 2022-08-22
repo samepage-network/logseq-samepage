@@ -63,7 +63,7 @@ const ActionButtons = ({
     label: string;
     callback: () => Promise<void>;
   }[];
-  onSuccess: () => void;
+  onSuccess: () => Promise<void>;
 }) => {
   const [loading, setLoading] = useState(false);
 
@@ -173,7 +173,11 @@ const NotificationContainer = ({ actions }: Props) => {
   }, []);
   const addNotificaton = useCallback(
     (not: Notification) => {
-      window.logseq.Editor.createPage(`samepage/notifications/${not.uuid}`)
+      window.logseq.Editor.createPage(
+        `samepage/notifications/${not.uuid}`,
+        {},
+        { redirect: false, createFirstBlock: false }
+      )
         .then(
           (newPage) =>
             newPage &&
@@ -261,7 +265,7 @@ const NotificationContainer = ({ actions }: Props) => {
   );
   const removeNotificaton = useCallback(
     (not: Notification) => {
-      window.logseq.Editor.deletePage(
+      return window.logseq.Editor.deletePage(
         `samepage/notifications/${not.uuid}`
       ).then(() => {
         notificationsRef.current = notificationsRef.current.filter(

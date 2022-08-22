@@ -56,8 +56,7 @@ const main = async () => {
           { timeout: 5000 }
         );
       } else if (evt.type === "init-page") {
-        const id = evt.notebookPageId;
-        window.logseq.Editor.getBlock(id).then((block) => {
+        window.logseq.Editor.getPage(Number(evt.notebookPageId)).then((block) => {
           if (block) {
             notebookDbIds.add(block.id);
             document.body.dispatchEvent(
