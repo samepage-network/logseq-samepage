@@ -254,7 +254,10 @@ const SharedPageStatus = ({
       ref={containerRef}
     >
       <i>Shared</i>
-      <Tooltip content={"Notebooks Connected"}>
+      <Tooltip
+        content={"Notebooks Connected"}
+        portalContainer={window.parent.document.body}
+      >
         <Popover
           content={
             <ConnectedNotebooks
@@ -263,6 +266,7 @@ const SharedPageStatus = ({
             />
           }
           target={<Button icon={"info-sign"} minimal disabled={loading} />}
+          portalContainer={window.parent.document.body}
         />
       </Tooltip>
       <InviteNotebook
@@ -272,7 +276,10 @@ const SharedPageStatus = ({
         sharePage={sharePage}
         apps={apps}
       />
-      <Tooltip content={"Disconnect Shared Page"}>
+      <Tooltip
+        content={"Disconnect Shared Page"}
+        portalContainer={window.parent.document.body}
+      >
         <Button
           disabled={loading}
           icon={"th-disconnect"}
@@ -283,7 +290,10 @@ const SharedPageStatus = ({
           }}
         />
       </Tooltip>
-      <Tooltip content={"Force Push Local Copy"}>
+      <Tooltip
+        content={"Force Push Local Copy"}
+        portalContainer={window.parent.document.body}
+      >
         <Button
           disabled={loading}
           icon={"warning-sign"}
@@ -305,13 +315,24 @@ export const render = (props: Props) => {
     key: `status-${props.parentUuid}`,
     template: `<div id="${id}"></div>`,
   });
-  setTimeout(() => {
-    const parent = window.parent.document.getElementById(id);
-    if (parent) {
-      const root = createRoot(parent);
-      root.render(<SharedPageStatus {...props} />);
-    }
-  });
+  return new Promise((resolve) =>
+    setTimeout(() => {
+      const parent = window.parent.document.getElementById(id);
+      if (parent) {
+        const root = createRoot(parent);
+        root.render(<SharedPageStatus {...props} />);
+        resolve(() => {
+          root.unmount();
+          const { parentElement } = parent;
+          if (parentElement)
+            parentElement.removeAttribute(
+              `data-logseq-shared-${props.parentUuid}`
+            );
+          parent.remove();
+        });
+      }
+    })
+  );
 };
 
 export default SharedPageStatus;

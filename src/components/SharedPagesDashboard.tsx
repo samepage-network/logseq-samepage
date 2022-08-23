@@ -1,17 +1,40 @@
-import { Classes, Dialog } from "@blueprintjs/core";
+import { Button, Classes, Dialog } from "@blueprintjs/core";
 import React, { useEffect, useState } from "react";
+import getPageByPropertyId from "../util/getPageByPropertyId";
+import LinkNewPage from "./LinkNewPage";
 import type { OverlayProps } from "./renderOverlay";
+import renderOverlay from "./renderOverlay";
 
 type Props = { notebookPageIds: string[] };
 
-const PageLink = ({ uuid }: { uuid: string }) => {
-  const [title, setTitle] = useState("");
+const PageLink = ({ uuid, onClose }: OverlayProps<{ uuid: string }>) => {
+  const [title, setTitle] = useState<string | undefined>("");
   useEffect(() => {
-    logseq.Editor.getPage(uuid).then((p) => setTitle(p?.name || ""));
+    getPageByPropertyId(uuid).then((p) =>
+      p
+        ? setTitle(p.originalName)
+        : logseq.Editor.getBlock(uuid).then((block) =>
+            block ? setTitle(block.content) : setTitle(undefined)
+          )
+    );
   }, [uuid]);
-  return (
+  return typeof title === "undefined" ? (
+    <span
+      className="flex"
+      style={{ justifyContent: "space-between", alignItems: "center" }}
+    >
+      <i>Page was deleted locally. Link another page?</i>{" "}
+      <Button
+        icon={"link"}
+        minimal
+        onClick={() => {
+          renderOverlay({ Overlay: LinkNewPage, props: { uuid } });
+          onClose();
+        }}
+      />
+    </span>
+  ) : (
     <a
-      className={"rm-page-ref"}
       data-link-title={title}
       onMouseDown={(e) => {
         if (e.shiftKey) {
@@ -19,7 +42,7 @@ const PageLink = ({ uuid }: { uuid: string }) => {
           e.preventDefault();
           e.stopPropagation();
         } else {
-          window.location.hash = `#/page/${encodeURIComponent(title)}`;
+          window.location.hash = `#/page/${encodeURIComponent(title.toLowerCase())}`;
         }
       }}
       onClick={(e) => {
@@ -54,7 +77,7 @@ const SharedPagesDashboard = ({
           <ul>
             {notebookPageIds.map((uuid) => (
               <li key={uuid}>
-                <PageLink uuid={uuid} />
+                <PageLink uuid={uuid} onClose={onClose} />
               </li>
             ))}
           </ul>

@@ -5,10 +5,11 @@ import UsageChart from "./components/UsageChart";
 import { notify } from "./components/NotificationContainer";
 import { renderLoading } from "./components/Loading";
 import setupSharePageWithNotebook, {
-  notebookDbIds,
+  notebookIds,
   STATUS_EVENT_NAME,
 } from "./protocols/sharePageWithNotebook";
 import renderOverlay from "./components/renderOverlay";
+import getPageByPropertyId from "./util/getPageByPropertyId";
 
 const main = async () => {
   logseq.useSettingsSchema([
@@ -56,9 +57,9 @@ const main = async () => {
           { timeout: 5000 }
         );
       } else if (evt.type === "init-page") {
-        window.logseq.Editor.getPage(Number(evt.notebookPageId)).then((block) => {
+        getPageByPropertyId(evt.notebookPageId).then((block) => {
           if (block) {
-            notebookDbIds.add(block.id);
+            notebookIds.add(evt.notebookPageId);
             document.body.dispatchEvent(
               new CustomEvent(STATUS_EVENT_NAME, {
                 detail: evt.notebookPageId,
