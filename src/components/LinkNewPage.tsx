@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import type { OverlayProps } from "./renderOverlay";
 import { Button, Classes, Dialog, InputGroup, Label } from "@blueprintjs/core";
 import apiClient from "@samepage/client/internal/apiClient";
+import addIdProperty from "../util/addIdProperty";
 
 const LinkNewPage = ({ onClose, uuid }: OverlayProps<{ uuid: string }>) => {
   const [name, setName] = useState("");
@@ -43,12 +44,7 @@ const LinkNewPage = ({ onClose, uuid }: OverlayProps<{ uuid: string }>) => {
                   newNotebookPageId: page.uuid,
                   method: "link-different-page",
                 })
-                  .then(() =>
-                    window.logseq.Editor.prependBlockInPage(
-                      page.uuid,
-                      `id:: ${page.uuid}`
-                    )
-                  )
+                  .then(() => addIdProperty(page.uuid))
                   .then(() => {
                     window.logseq.UI.showMsg(
                       `Successfully linked ${name} to shared page!`
