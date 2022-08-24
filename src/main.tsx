@@ -1,6 +1,6 @@
 import "@logseq/libs";
 import "./index.css";
-import { setupSamePageClient } from "@samepage/client";
+import setupSamePageClient from "@samepage/client/protocols/setupSamePageClient";
 import UsageChart from "./components/UsageChart";
 import { notify } from "./components/NotificationContainer";
 import { renderLoading } from "./components/Loading";
