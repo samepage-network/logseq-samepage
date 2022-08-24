@@ -208,6 +208,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     rejectPage,
     forcePushPage,
     listConnectedNotebooks,
+    getLocalHistory,
   } = loadSharePageWithNotebook({
     renderInitPage: async ({ onSubmit }) => {
       const notebookPageId = await logseq.Editor.getCurrentPage().then((p) =>
@@ -553,6 +554,8 @@ const setupSharePageWithNotebook = (apps: Apps) => {
           disconnectPage,
           forcePushPage,
           listConnectedNotebooks,
+          getLocalHistory,
+          portalContainer: window.parent.document.body,
         });
       }
     }
