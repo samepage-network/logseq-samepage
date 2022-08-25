@@ -198,7 +198,7 @@ const calculateState = async (notebookPageId: string) => {
 
 export const STATUS_EVENT_NAME = "logseq:samepage:status";
 export const notebookIds = new Set<string>();
-const setupSharePageWithNotebook = (apps: Apps) => {
+const setupSharePageWithNotebook = () => {
   const {
     unload,
     updatePage,
@@ -589,7 +589,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
   const statusListener = ((e: CustomEvent) => {
     const id = e.detail as string;
     Array.from(
-      document.querySelectorAll<HTMLHeadingElement>("h1.title")
+      window.parent.document.querySelectorAll<HTMLHeadingElement>("h1.title")
     ).forEach((header) => {
       renderStatusUnderHeading((u) => u === id, header);
     });

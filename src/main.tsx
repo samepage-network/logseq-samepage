@@ -99,7 +99,7 @@ const main = async () => {
       }
     },
   });
-  const unloadSharePageWithNotebook = setupSharePageWithNotebook(apps);
+  const unloadSharePageWithNotebook = setupSharePageWithNotebook();
 
   logseq.provideStyle(`@import url("https://unpkg.com/normalize.css@^8.0.1");
 @import url("https://unpkg.com/@blueprintjs/core@^4.8.0/lib/css/blueprint.css");

@@ -26,5 +26,4 @@ jobs:
       - name: deploy
         run: |
           VERSION=$(cat package.json | grep version | cut -d ':' -f 2 | cut -d '"' -f 2)
-          echo $VERSION
           aws s3 cp dist/logseq.zip s3://samepage.network/extensions/logseq.zip --metadata Version=$VERSION
