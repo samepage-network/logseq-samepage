@@ -489,8 +489,15 @@ const setupSharePageWithNotebook = () => {
           )
           .concat(
             uuidsToUpdate.map(([samepageUuid, logseqUuid]) => {
-              const { parentUuid, order, ...node } =
-                expectedTreeMapping[samepageUuid];
+              const {
+                parentUuid: samepageParentUuid,
+                order,
+                ...node
+              } = expectedTreeMapping[samepageUuid];
+              const parentUuid =
+                samepageParentUuid === notebookPageId
+                  ? samepageParentUuid
+                  : expectedSamepageToLogseq[samepageParentUuid];
               const actual = actualTreeMapping[logseqUuid];
               // it's possible we may need to await from above and repull
               if (actual.parentUuid !== parentUuid || actual.order !== order) {
@@ -555,15 +562,12 @@ const setupSharePageWithNotebook = () => {
             { createFirstBlock: false }
           )
             .then((page) =>
-              window.logseq.Editor.appendBlockInPage(
-                page?.uuid || "",
-                `id:: ${page?.uuid || ""}`
-              ).then(() => page)
+              addIdProperty(page?.uuid || "").then(() => page?.uuid || "")
             )
-            .then((page) =>
+            .then((notebookPageId) =>
               joinPage({
                 pageUuid,
-                notebookPageId: page?.uuid || "",
+                notebookPageId,
                 source: { app: Number(app) as AppId, workspace },
               }).catch((e) => {
                 window.logseq.Editor.deletePage(`samepage/page/${pageUuid}`);
