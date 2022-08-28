@@ -68,7 +68,7 @@ const main = async () => {
           }
         });
       } else if (evt.type === "share-page") {
-        const app = apps.find((a) => a.id === evt.source.app)?.name;
+        const app = apps[evt.source.app]?.name;
         const args = {
           workspace: evt.source.workspace,
           app: `${evt.source.app}`,
@@ -99,7 +99,7 @@ const main = async () => {
       }
     },
   });
-  const unloadSharePageWithNotebook = setupSharePageWithNotebook();
+  const unloadSharePageWithNotebook = setupSharePageWithNotebook(apps);
 
   logseq.provideStyle(`@import url("https://unpkg.com/normalize.css@^8.0.1");
 @import url("https://unpkg.com/@blueprintjs/core@^4.8.0/lib/css/blueprint.css");
@@ -108,6 +108,15 @@ body {
 }
 a.page-title:hover {
   text-decoration: none;
+}
+.flex-col-reverse {
+  flex-direction: column-reverse;
+}
+.top-2 {
+  top: 8px;
+}
+.right-2 {
+  right: 8px;
 }
 `);
 

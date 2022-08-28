@@ -8,13 +8,18 @@ import SharedPageStatus, {
 import NotificationContainer from "@samepage/client/components/NotificationContainer";
 import Automerge from "automerge";
 import { Apps, AppId, Schema } from "@samepage/shared";
-import { BlockEntity } from "@logseq/libs/dist/LSPlugin.user";
+import {
+  BlockEntity,
+  BlockUUID,
+  BlockUUIDTuple,
+} from "@logseq/libs/dist/LSPlugin.user";
 import { openDB, IDBPDatabase } from "idb";
 import { v4 } from "uuid";
 import getPageByPropertyId from "../util/getPageByPropertyId";
 import addIdProperty from "../util/addIdProperty";
 import React from "react";
 import { createRoot } from "react-dom/client";
+import dateFormat from "date-fns/format";
 
 type InputTextNode = {
   content: string;
@@ -96,11 +101,11 @@ const getSubTree = ({
 const logseqToSamepage = (s: string) =>
   openIdb()
     .then((db) => db.get("logseq-to-samepage", s))
-    .then((v) => v as string);
+    .then((v) => (v as string) || "");
 const samepageToLogseq = (s: string) =>
   openIdb()
     .then((db) => db.get("samepage-to-logseq", s))
-    .then((v) => v as string);
+    .then((v) => (v as string) || "");
 const saveIdMap = (logseq: string, samepage: string) =>
   openIdb().then((db) =>
     Promise.all([
@@ -185,20 +190,25 @@ const toAtJson = async ({
   };
 };
 
-const flattenTree = <T extends { children?: T[]; uuid?: string }>(
+const flattenTree = <
+  T extends { children?: (T | BlockUUIDTuple)[]; uuid?: string }
+>(
   tree: T[],
   parentUuid: string
 ): (Omit<T, "children"> & { order: number; parentUuid: string })[] =>
   tree.flatMap(({ children = [], ...t }, order) => [
     { ...t, order, parentUuid },
-    ...flattenTree(children, t.uuid || ""),
+    ...flattenTree(
+      children.filter((c): c is T => typeof c === "object"),
+      t.uuid || ""
+    ),
   ]);
 
 const calculateState = async (notebookPageId: string) => {
   const page = await getPageByPropertyId(notebookPageId);
-  const nodes = page
-    ? await window.logseq.Editor.getPageBlocksTree(page.originalName)
-    : [];
+  const nodes = (
+    page ? await window.logseq.Editor.getPageBlocksTree(page.originalName) : []
+  ).filter((b) => b.content !== `id:: ${notebookPageId}`);
   const parentUuid = await window.logseq.Editor.getBlock(notebookPageId).then(
     (b) =>
       window.logseq.Editor.getBlock(b?.parent.id || 0).then(
@@ -241,7 +251,7 @@ const calculateState = async (notebookPageId: string) => {
 
 export const STATUS_EVENT_NAME = "logseq:samepage:status";
 export const notebookIds = new Set<string>();
-const setupSharePageWithNotebook = () => {
+const setupSharePageWithNotebook = (apps: Apps) => {
   const {
     unload,
     updatePage,
@@ -277,7 +287,7 @@ const setupSharePageWithNotebook = () => {
       const parents: Record<string, string> = {};
       let expectedPageViewType = "bullet";
       let currentBlock: InputTextNode;
-      let initialPromise = Promise.resolve<unknown>("");
+      let initialPromise = () => Promise.resolve<unknown>("");
       const insertAtLevel = (
         nodes: InputTextNode[],
         level: number,
@@ -309,38 +319,38 @@ const setupSharePageWithNotebook = () => {
         } else if (anno.type === "metadata") {
           const title = anno.attributes.title;
           const parentUid = anno.attributes.parent;
-          initialPromise = (
-            parentUid
+          initialPromise = () =>
+            (parentUid
               ? window.logseq.Editor.getBlock(notebookPageId)
               : getPageByPropertyId(notebookPageId)
-          )
-            .then((node) => {
-              if (node) {
-                const existingTitle =
-                  node.originalName || (node as BlockEntity).content;
-                if (existingTitle !== title) {
-                  if (parentUid) {
-                    return window.logseq.Editor.getBlock(notebookPageId).then(
-                      (block) =>
-                        block &&
-                        window.logseq.Editor.updateBlock(block.uuid, title)
-                    );
-                  } else {
-                    return window.logseq.Editor.renamePage(
-                      existingTitle,
-                      title
-                    );
+            )
+              .then(async (node) => {
+                if (node) {
+                  const existingTitle =
+                    node.originalName || (node as BlockEntity).content;
+                  if (existingTitle !== title) {
+                    if (parentUid) {
+                      return window.logseq.Editor.getBlock(notebookPageId).then(
+                        (block) =>
+                          block &&
+                          window.logseq.Editor.updateBlock(block.uuid, title)
+                      );
+                    } else {
+                      return window.logseq.Editor.renamePage(
+                        existingTitle,
+                        title
+                      );
+                    }
                   }
+                } else {
+                  throw new Error(`Missing page with id: ${notebookPageId}`);
                 }
-              } else {
-                throw new Error(`Missing page with id: ${notebookPageId}`);
-              }
-            })
-            .catch((e) => {
-              return Promise.reject(
-                new Error(`Failed to initialize page metadata: ${e.message}`)
-              );
-            });
+              })
+              .catch((e) => {
+                return Promise.reject(
+                  new Error(`Failed to initialize page metadata: ${e.message}`)
+                );
+              });
         }
       });
       // TODO viewType
@@ -376,8 +386,10 @@ const setupSharePageWithNotebook = () => {
         )
         .then((tree = []) =>
           Object.fromEntries(
-            //@ts-ignore guaranteed BlockEntity tree
-            flattenTree(tree, notebookPageId).map(({ uuid, ...n }) => [uuid, n])
+            flattenTree(tree, notebookPageId)
+              // ignore id metadata for now)
+              .filter((n) => n.content !== `id:: ${notebookPageId}`)
+              .map(({ uuid, ...n }) => [uuid, n])
           )
         )
         .then((a) => a as Record<string, BlockEntity>);
@@ -401,15 +413,15 @@ const setupSharePageWithNotebook = () => {
       const uuidsToUpdate = Object.entries(expectedSamepageToLogseq).filter(
         ([, k]) => !!actualTreeMapping[k]
       );
-      return Promise.all(
-        (
-          [
-            initialPromise,
-            //viewTypePromise
-          ] as Promise<unknown>[]
-        )
-          .concat(
-            uuidsToDelete.map((uuid) =>
+      const promises = (
+        [
+          initialPromise,
+          //viewTypePromise
+        ] as (() => Promise<unknown>)[]
+      )
+        .concat(
+          uuidsToDelete.map(
+            (uuid) => () =>
               window.logseq.Editor.removeBlock(uuid)
                 .then(() => removeLogseqUuid(uuid))
                 .catch((e) => {
@@ -417,118 +429,124 @@ const setupSharePageWithNotebook = () => {
                     new Error(`Failed to remove block ${uuid}: ${e.message}`)
                   );
                 })
-            )
           )
-          .concat(
-            uuidsToCreate.map(([samepageUuid]) => {
-              const { parentUuid, order, ...node } =
-                expectedTreeMapping[samepageUuid];
-              return (
-                parentUuid === notebookPageId
-                  ? getPageByPropertyId(notebookPageId).then(
-                      (p) =>
-                        p &&
-                        window.logseq.Editor.getPageBlocksTree(
-                          p.originalName
-                        ).then((tree) =>
-                          (order < tree.length
-                            ? window.logseq.Editor.insertBlock(
-                                tree[order].uuid,
-                                node.content,
-                                { before: true }
-                              )
-                            : window.logseq.Editor.appendBlockInPage(
-                                p?.originalName,
-                                node.content
-                              )
-                          ).then(
-                            (block) =>
-                              block &&
-                              window.logseq.Editor.upsertBlockProperty(
-                                block.uuid,
-                                "id",
-                                block.uuid
-                              ).then(() => block.uuid)
-                          )
-                        )
-                    )
-                  : window.logseq.Editor.getBlock(
-                      expectedSamepageToLogseq[samepageUuid],
-                      { includeChildren: true }
-                    )
-                      .then((block) =>
-                        order < (block?.children?.length || 0)
+        )
+        .concat(
+          uuidsToCreate.map(([samepageUuid]) => async () => {
+            const { parentUuid, order, ...node } =
+              expectedTreeMapping[samepageUuid];
+            return (
+              parentUuid === notebookPageId
+                ? getPageByPropertyId(notebookPageId).then(
+                    (p) =>
+                      p &&
+                      window.logseq.Editor.getPageBlocksTree(
+                        p.originalName
+                      ).then((tree) =>
+                        (order < tree.length
                           ? window.logseq.Editor.insertBlock(
-                              (block?.children?.[order] as BlockEntity).uuid,
-                              node.content
+                              tree[order].uuid,
+                              node.content,
+                              { before: true }
                             )
                           : window.logseq.Editor.appendBlockInPage(
-                              expectedSamepageToLogseq[samepageUuid],
+                              p?.originalName,
                               node.content
                             )
+                        ).then(
+                          (block) =>
+                            block &&
+                            window.logseq.Editor.upsertBlockProperty(
+                              block.uuid,
+                              "id",
+                              block.uuid
+                            ).then(() => block.uuid)
+                        )
                       )
-                      .then(
-                        (block) =>
-                          block &&
-                          window.logseq.Editor.upsertBlockProperty(
-                            block.uuid,
-                            "id",
-                            block.uuid
-                          ).then(() => block.uuid)
-                      )
+                  )
+                : window.logseq.Editor.getBlock(
+                    expectedSamepageToLogseq[parentUuid],
+                    { includeChildren: true }
+                  )
+                    .then((block) =>
+                      order < (block?.children?.length || 0)
+                        ? window.logseq.Editor.insertBlock(
+                            (block?.children?.[order] as BlockEntity).uuid,
+                            node.content
+                          )
+                        : window.logseq.Editor.appendBlockInPage(
+                            expectedSamepageToLogseq[parentUuid],
+                            node.content
+                          )
+                    )
+                    .then(
+                      (block) =>
+                        block &&
+                        window.logseq.Editor.upsertBlockProperty(
+                          block.uuid,
+                          "id",
+                          block.uuid
+                        ).then(() => block.uuid)
+                    )
+            )
+              .then((uuid) =>
+                uuid
+                  ? saveIdMap(uuid, samepageUuid).then(
+                      () => (expectedSamepageToLogseq[samepageUuid] = uuid)
+                    )
+                  : Promise.reject(new Error(`null block uuid created`))
               )
-                .then((uuid) => saveIdMap(uuid || "", samepageUuid))
-                .catch((e) => {
-                  return Promise.reject(
-                    new Error(
-                      `Failed to insert block ${samepageUuid}: ${e.message}`
-                    )
-                  );
-                });
-            })
-          )
-          .concat(
-            uuidsToUpdate.map(([samepageUuid, logseqUuid]) => {
-              const {
-                parentUuid: samepageParentUuid,
-                order,
-                ...node
-              } = expectedTreeMapping[samepageUuid];
-              const parentUuid =
-                samepageParentUuid === notebookPageId
-                  ? samepageParentUuid
-                  : expectedSamepageToLogseq[samepageParentUuid];
-              const actual = actualTreeMapping[logseqUuid];
-              // it's possible we may need to await from above and repull
-              if (actual.parentUuid !== parentUuid || actual.order !== order) {
-                return window.logseq.Editor.moveBlock(
-                  logseqUuid,
-                  parentUuid
-                  // use order to determine `before` or `children`
-                ).catch((e) => {
-                  return Promise.reject(
-                    new Error(
-                      `Failed to move block ${samepageUuid}: ${e.message}`
-                    )
-                  );
-                });
-              } else if (actual.content !== node.content) {
-                return window.logseq.Editor.updateBlock(
-                  logseqUuid,
-                  node.content
-                ).catch((e) => {
-                  return Promise.reject(
-                    new Error(
-                      `Failed to update block ${samepageUuid}: ${e.message}`
-                    )
-                  );
-                });
-              } else {
-                return Promise.resolve("");
-              }
-            })
-          )
-      );
+              .catch((e) => {
+                return Promise.reject(
+                  new Error(
+                    `Failed to insert block ${samepageUuid}: ${e.message}`
+                  )
+                );
+              });
+          })
+        )
+        .concat(
+          uuidsToUpdate.map(([samepageUuid, logseqUuid]) => () => {
+            const {
+              parentUuid: samepageParentUuid,
+              order,
+              ...node
+            } = expectedTreeMapping[samepageUuid];
+            const parentUuid =
+              samepageParentUuid === notebookPageId
+                ? samepageParentUuid
+                : expectedSamepageToLogseq[samepageParentUuid];
+            const actual = actualTreeMapping[logseqUuid];
+            // it's possible we may need to await from above and repull
+            if (actual.parentUuid !== parentUuid || actual.order !== order) {
+              return window.logseq.Editor.moveBlock(
+                logseqUuid,
+                parentUuid
+                // use order to determine `before` or `children`
+              ).catch((e) => {
+                return Promise.reject(
+                  new Error(
+                    `Failed to move block ${samepageUuid}: ${e.message}`
+                  )
+                );
+              });
+            } else if (actual.content !== node.content) {
+              return window.logseq.Editor.updateBlock(
+                logseqUuid,
+                node.content
+              ).catch((e) => {
+                return Promise.reject(
+                  new Error(
+                    `Failed to update block ${samepageUuid}: ${e.message}`
+                  )
+                );
+              });
+            } else {
+              return Promise.resolve("");
+            }
+          })
+        );
+      return promises.reduce((p, c) => p.then(c), Promise.resolve<unknown>(""));
     },
     calculateState,
     loadState: async (notebookPageId) =>
@@ -559,20 +577,34 @@ const setupSharePageWithNotebook = () => {
           window.logseq.Editor.createPage(
             `samepage/page/${pageUuid}`,
             {},
-            { createFirstBlock: false }
+            { redirect: false, createFirstBlock: false }
           )
-            .then((page) =>
-              addIdProperty(page?.uuid || "").then(() => page?.uuid || "")
-            )
+            .then((page) => page?.uuid || "")
             .then((notebookPageId) =>
-              joinPage({
-                pageUuid,
-                notebookPageId,
-                source: { app: Number(app) as AppId, workspace },
-              }).catch((e) => {
-                window.logseq.Editor.deletePage(`samepage/page/${pageUuid}`);
-                return Promise.reject(e);
-              })
+              addIdProperty(notebookPageId)
+                .then(() =>
+                  joinPage({
+                    pageUuid,
+                    notebookPageId,
+                    source: { app: Number(app) as AppId, workspace },
+                  })
+                )
+                .then(() => getPageByPropertyId(notebookPageId))
+                .then((title) => {
+                  const todayName = dateFormat(new Date(), "MMM do, yyyy");
+                  return window.logseq.Editor.appendBlockInPage(
+                    todayName,
+                    `Accepted page [[${title?.originalName}]] from ${
+                      apps[Number(app)].name
+                    } / ${workspace}`
+                  );
+                })
+                .then(() => Promise.resolve())
+                .catch((e) => {
+                  window.logseq.Editor.deletePage(`samepage/page/${pageUuid}`);
+                  console.error(e);
+                  return Promise.reject(e);
+                })
             ),
         reject: async ({ workspace, app }) =>
           rejectPage({ source: { app: Number(app) as AppId, workspace } }),
@@ -677,7 +709,7 @@ const setupSharePageWithNotebook = () => {
                     (tree) => ({
                       tree,
                       uuid: block[0].name.replace(
-                        /^samepage\/notifications/,
+                        /^samepage\/notifications\//,
                         ""
                       ),
                     })
