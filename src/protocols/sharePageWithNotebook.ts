@@ -8,11 +8,7 @@ import SharedPageStatus, {
 import NotificationContainer from "@samepage/client/components/NotificationContainer";
 import Automerge from "automerge";
 import { Apps, AppId, Schema } from "@samepage/shared";
-import {
-  BlockEntity,
-  BlockUUID,
-  BlockUUIDTuple,
-} from "@logseq/libs/dist/LSPlugin.user";
+import { BlockEntity, BlockUUIDTuple } from "@logseq/libs/dist/LSPlugin.user";
 import { openDB, IDBPDatabase } from "idb";
 import { v4 } from "uuid";
 import getPageByPropertyId from "../util/getPageByPropertyId";
@@ -143,33 +139,40 @@ const toAtJson = async ({
   level?: number;
   startIndex?: number;
   viewType?: InputTextNode["viewType"];
-}) => {
-  const annotations: Schema["annotations"] = [];
-  let index = startIndex;
-  const content: string = await Promise.all(
-    nodes.map((n) =>
-      logseqToSamepage(n.uuid)
-        .then(
-          (identifier) =>
-            identifier ||
-            Promise.resolve(v4()).then((samepageUuid) =>
-              saveIdMap(n.uuid, samepageUuid).then(() => samepageUuid)
-            )
-        )
-        .then(async (identifier) => {
-          const end = n.content.length + index;
-          annotations.push({
-            start: index,
-            end,
-            attributes: {
-              identifier,
-              level: level,
-              viewType: viewType,
-            },
-            type: "block",
-          });
-          const { content: childrenContent, annotations: childrenAnnotations } =
-            await toAtJson({
+}): Promise<Omit<Schema, "contentType">> => {
+  return nodes
+    .map(
+      (n) => (index: number) =>
+        logseqToSamepage(n.uuid)
+          .then(
+            (identifier) =>
+              identifier ||
+              Promise.resolve(v4()).then((samepageUuid) =>
+                saveIdMap(n.uuid, samepageUuid).then(() => samepageUuid)
+              )
+          )
+          .then(async (identifier) => {
+            const content = n.content.replace(
+              new RegExp(`\\nid:: ${n.uuid}$`),
+              ""
+            );
+            const end = content.length + index;
+            const annotations: Schema["annotations"] = [
+              {
+                start: index,
+                end,
+                attributes: {
+                  identifier,
+                  level: level,
+                  viewType: viewType,
+                },
+                type: "block",
+              },
+            ];
+            const {
+              content: childrenContent,
+              annotations: childrenAnnotations,
+            } = await toAtJson({
               nodes: (n.children || []).filter(
                 (b): b is BlockEntity => !Array.isArray(b)
               ),
@@ -177,17 +180,27 @@ const toAtJson = async ({
               viewType: n.viewType || viewType,
               startIndex: end,
             });
-          const nodeContent = `${n.content}${childrenContent}`;
-          annotations.push(...childrenAnnotations);
-          index += nodeContent.length;
-          return nodeContent;
-        })
+            return {
+              content: new Automerge.Text(`${content}${childrenContent}`),
+              annotations: annotations.concat(childrenAnnotations),
+            };
+          })
     )
-  ).then((nodes) => nodes.join(""));
-  return {
-    content,
-    annotations,
-  };
+    .reduce(
+      (p, c) =>
+        p.then(({ content: pc, annotations: pa }) =>
+          c(startIndex + pc.length).then(
+            ({ content: cc, annotations: ca }) => ({
+              content: new Automerge.Text(`${pc}${cc}`),
+              annotations: pa.concat(ca),
+            })
+          )
+        ),
+      Promise.resolve({
+        content: new Automerge.Text(""),
+        annotations: [] as Schema["annotations"],
+      })
+    );
 };
 
 const flattenTree = <
@@ -256,31 +269,21 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     unload,
     updatePage,
     disconnectPage,
-    sharePage,
     joinPage,
     rejectPage,
     forcePushPage,
     listConnectedNotebooks,
     getLocalHistory,
   } = loadSharePageWithNotebook({
-    renderInitPage: async ({ onSubmit }) => {
-      const notebookPageId = await logseq.Editor.getCurrentPage().then((p) =>
-        p ? p.uuid : ""
-      );
-      renderOverlay<Omit<Parameters<typeof SharePageDialog>[0], "onClose">>({
-        Overlay: SharePageDialog,
-        props: {
-          onSubmit: (submitProps) =>
-            addIdProperty(notebookPageId).then(() =>
-              onSubmit({ ...submitProps, notebookPageId })
-            ),
-          portalContainer: window.parent.document.body,
-        },
-      });
-    },
     renderViewPages: (props) =>
       renderOverlay({ Overlay: SharedPagesDashboard, props }),
 
+    getCurrentNotebookPageId: () =>
+      logseq.Editor.getCurrentPage()
+        .then((p) => (p ? p.uuid : ""))
+        .then((notebookPageId) =>
+          addIdProperty(notebookPageId).then(() => notebookPageId)
+        ),
     applyState: async (notebookPageId, state) => {
       const expectedTree: InputTextNode[] = [];
       const mapping: Record<string, InputTextNode> = {};
@@ -782,7 +785,6 @@ const setupSharePageWithNotebook = (apps: Apps) => {
         containerParent.setAttribute(attribute, "true");
         const unmount = await renderStatus({
           notebookPageId: uuid,
-          sharePage,
           disconnectPage: (id) =>
             disconnectPage(id).then(() => {
               notebookIds.delete(id);

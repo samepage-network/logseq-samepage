@@ -118,6 +118,10 @@ a.page-title:hover {
 .right-2 {
   right: 8px;
 }
+div.samepage-notification-container { 
+  top: 40px;
+  bottom: unset;
+}
 `);
 
   logseq.beforeunload(async () => {
