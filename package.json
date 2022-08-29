@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@logseq/libs": "^0.0.6",
-    "@samepage/client": "^0.6.2",
+    "@samepage/client": "^0.6.5",
     "date-fns": "^2.29.2",
     "idb": "^7.0.2"
   },

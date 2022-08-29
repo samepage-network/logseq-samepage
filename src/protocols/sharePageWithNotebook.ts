@@ -1,5 +1,4 @@
 import loadSharePageWithNotebook from "@samepage/client/protocols/sharePageWithNotebook";
-import SharePageDialog from "@samepage/client/components/SharePageDialog";
 import renderOverlay from "../components/renderOverlay";
 import SharedPagesDashboard from "../components/SharedPagesDashboard";
 import SharedPageStatus, {
@@ -217,11 +216,55 @@ const flattenTree = <
     ),
   ]);
 
+// const PROPERTIES_REGEX = /^()+$/s
+const isContentBlock = (b: BlockEntity) => {
+  const props = b.propertiesOrder as string[];
+  return (
+    !b.content ||
+    !!props.reduce(
+      (p, c) => p.replace(new RegExp(`${c}:: [^\\n]+\\n?`), ""),
+      b.content
+    )
+  );
+};
+
+const createHTMLObserver = <T extends HTMLElement>({
+  callback,
+  tag,
+  className,
+}: {
+  callback: (el: T) => void;
+  tag: string;
+  className: string;
+}) => {
+  const getChildren = (d: Node) =>
+    Array.from((d as HTMLElement).getElementsByClassName(className)).filter(
+      (d) => d.nodeName === tag
+    ) as T[];
+  const isNode = (d: Node): d is T =>
+    d.nodeName === tag &&
+    Array.from((d as HTMLElement).classList).includes(className);
+  const getNodes = (nodes: NodeList) =>
+    Array.from(nodes)
+      .filter((d: Node) => isNode(d) || d.hasChildNodes())
+      .flatMap((d) => (isNode(d) ? [d] : getChildren(d)));
+
+  getChildren(window.parent.document.body).forEach(callback);
+  const observer = new MutationObserver((records) => {
+    records.flatMap((m) => getNodes(m.addedNodes)).forEach(callback);
+  });
+  observer.observe(window.parent.document.body, {
+    childList: true,
+    subtree: true,
+  });
+  return observer;
+};
+
 const calculateState = async (notebookPageId: string) => {
   const page = await getPageByPropertyId(notebookPageId);
   const nodes = (
     page ? await window.logseq.Editor.getPageBlocksTree(page.originalName) : []
-  ).filter((b) => b.content !== `id:: ${notebookPageId}`);
+  ).filter(isContentBlock);
   const parentUuid = await window.logseq.Editor.getBlock(notebookPageId).then(
     (b) =>
       window.logseq.Editor.getBlock(b?.parent.id || 0).then(
@@ -279,11 +322,9 @@ const setupSharePageWithNotebook = (apps: Apps) => {
       renderOverlay({ Overlay: SharedPagesDashboard, props }),
 
     getCurrentNotebookPageId: () =>
-      logseq.Editor.getCurrentPage()
-        .then((p) => (p ? p.uuid : ""))
-        .then((notebookPageId) =>
-          addIdProperty(notebookPageId).then(() => notebookPageId)
-        ),
+      logseq.Editor.getCurrentPage().then((p) =>
+        p && !("page" in p) ? addIdProperty(p).then(() => p.uuid) : ""
+      ),
     applyState: async (notebookPageId, state) => {
       const expectedTree: InputTextNode[] = [];
       const mapping: Record<string, InputTextNode> = {};
@@ -389,10 +430,9 @@ const setupSharePageWithNotebook = (apps: Apps) => {
         )
         .then((tree = []) =>
           Object.fromEntries(
-            flattenTree(tree, notebookPageId)
-              // ignore id metadata for now)
-              .filter((n) => n.content !== `id:: ${notebookPageId}`)
-              .map(({ uuid, ...n }) => [uuid, n])
+            flattenTree(tree.filter(isContentBlock), notebookPageId).map(
+              ({ uuid, ...n }) => [uuid, n]
+            )
           )
         )
         .then((a) => a as Record<string, BlockEntity>);
@@ -440,39 +480,47 @@ const setupSharePageWithNotebook = (apps: Apps) => {
               expectedTreeMapping[samepageUuid];
             return (
               parentUuid === notebookPageId
-                ? getPageByPropertyId(notebookPageId).then(
-                    (p) =>
-                      p &&
-                      window.logseq.Editor.getPageBlocksTree(
-                        p.originalName
-                      ).then((tree) =>
-                        (order < tree.length
-                          ? window.logseq.Editor.insertBlock(
-                              tree[order].uuid,
-                              node.content,
-                              { before: true }
-                            )
-                          : window.logseq.Editor.appendBlockInPage(
-                              p?.originalName,
-                              node.content
-                            )
-                        ).then(
-                          (block) =>
-                            block &&
-                            window.logseq.Editor.upsertBlockProperty(
-                              block.uuid,
-                              "id",
-                              block.uuid
-                            ).then(() => block.uuid)
+                ? getPageByPropertyId(notebookPageId).then((p) =>
+                    !p
+                      ? Promise.reject(
+                          new Error(`Failed to find page ${notebookPageId}`)
                         )
-                      )
+                      : window.logseq.Editor.getPageBlocksTree(
+                          p.originalName
+                        ).then((tree) =>
+                          (order < tree.length
+                            ? window.logseq.Editor.insertBlock(
+                                tree[order].uuid,
+                                node.content,
+                                { before: true }
+                              )
+                            : window.logseq.Editor.appendBlockInPage(
+                                p?.originalName,
+                                node.content
+                              )
+                          ).then(
+                            (block) =>
+                              block &&
+                              window.logseq.Editor.upsertBlockProperty(
+                                block.uuid,
+                                "id",
+                                block.uuid
+                              ).then(() => block.uuid)
+                          )
+                        )
                   )
                 : window.logseq.Editor.getBlock(
                     expectedSamepageToLogseq[parentUuid],
                     { includeChildren: true }
                   )
                     .then((block) =>
-                      order < (block?.children?.length || 0)
+                      !block
+                        ? Promise.reject(
+                            new Error(
+                              `Referencing parent ${parentUuid} but none exists`
+                            )
+                          )
+                        : order < (block?.children?.length || 0)
                         ? window.logseq.Editor.insertBlock(
                             (block?.children?.[order] as BlockEntity).uuid,
                             node.content
@@ -580,37 +628,37 @@ const setupSharePageWithNotebook = (apps: Apps) => {
           window.logseq.Editor.createPage(
             `samepage/page/${pageUuid}`,
             {},
-            { redirect: false, createFirstBlock: false }
-          )
-            .then((page) => page?.uuid || "")
-            .then((notebookPageId) =>
-              addIdProperty(notebookPageId)
-                .then(() =>
-                  joinPage({
-                    pageUuid,
-                    notebookPageId,
-                    source: { app: Number(app) as AppId, workspace },
-                  })
-                )
-                .then(() => getPageByPropertyId(notebookPageId))
-                .then((title) => {
-                  const todayName = dateFormat(new Date(), "MMM do, yyyy");
-                  return window.logseq.Editor.appendBlockInPage(
-                    todayName,
-                    `Accepted page [[${title?.originalName}]] from ${
-                      apps[Number(app)].name
-                    } / ${workspace}`
-                  );
-                })
-                .then(() => Promise.resolve())
-                .catch((e) => {
-                  window.logseq.Editor.deletePage(`samepage/page/${pageUuid}`);
-                  console.error(e);
-                  return Promise.reject(e);
-                })
-            ),
-        reject: async ({ workspace, app }) =>
-          rejectPage({ source: { app: Number(app) as AppId, workspace } }),
+            { redirect: false }
+          ).then((page) =>
+            addIdProperty(page)
+              .then((notebookPageId) =>
+                joinPage({
+                  pageUuid,
+                  notebookPageId,
+                  source: { app: Number(app) as AppId, workspace },
+                }).then(() => getPageByPropertyId(notebookPageId))
+              )
+              .then((title) => {
+                const todayName = dateFormat(new Date(), "MMM do, yyyy");
+                return window.logseq.Editor.appendBlockInPage(
+                  todayName,
+                  `Accepted page [[${title?.originalName}]] from ${
+                    apps[Number(app)].name
+                  } / ${workspace}`
+                );
+              })
+              .then(() => Promise.resolve())
+              .catch((e) => {
+                window.logseq.Editor.deletePage(`samepage/page/${pageUuid}`);
+                console.error(e);
+                return Promise.reject(e);
+              })
+          ),
+        reject: async ({ workspace, app, pageUuid }) =>
+          rejectPage({
+            source: { app: Number(app) as AppId, workspace },
+            pageUuid,
+          }),
       },
       api: {
         deleteNotification: (uuid) =>
@@ -648,53 +696,34 @@ const setupSharePageWithNotebook = (apps: Apps) => {
                 ),
                 window.logseq.Editor.appendBlockInPage(
                   newPage.uuid,
-                  "Actions"
+                  "Buttons"
                 ).then(
                   (block) =>
                     block &&
                     Promise.all(
-                      not.actions.map((a) =>
+                      not.buttons.map((a) =>
+                        window.logseq.Editor.appendBlockInPage(block.uuid, a)
+                      )
+                    )
+                ),
+                window.logseq.Editor.appendBlockInPage(
+                  newPage.uuid,
+                  "Data"
+                ).then(
+                  (block) =>
+                    block &&
+                    Promise.all(
+                      Object.entries(not.data).map((arg) =>
                         window.logseq.Editor.appendBlockInPage(
                           block.uuid,
-                          a.label
+                          arg[0]
                         ).then(
                           (block) =>
                             block &&
-                            Promise.all([
-                              window.logseq.Editor.appendBlockInPage(
-                                block.uuid,
-                                "Method"
-                              ).then(
-                                (block) =>
-                                  block &&
-                                  window.logseq.Editor.appendBlockInPage(
-                                    block.uuid,
-                                    a.method
-                                  )
-                              ),
-                              window.logseq.Editor.appendBlockInPage(
-                                block.uuid,
-                                "Args"
-                              ).then(
-                                (block) =>
-                                  block &&
-                                  Promise.all(
-                                    Object.entries(a.args).map((arg) =>
-                                      window.logseq.Editor.appendBlockInPage(
-                                        block.uuid,
-                                        arg[0]
-                                      ).then(
-                                        (block) =>
-                                          block &&
-                                          window.logseq.Editor.appendBlockInPage(
-                                            block.uuid,
-                                            arg[1]
-                                          )
-                                      )
-                                    )
-                                  )
-                              ),
-                            ])
+                            window.logseq.Editor.appendBlockInPage(
+                              block.uuid,
+                              arg[1]
+                            )
                         )
                       )
                     )
@@ -732,35 +761,25 @@ const setupSharePageWithNotebook = (apps: Apps) => {
                     tree,
                     key: "Description",
                   }),
-                  actions: (
+                  buttons: (
                     getSubTree({
                       tree,
-                      key: "Actions",
+                      key: "Buttons",
                     }).children || []
-                  ).map((act) => ({
-                    label: (act as BlockEntity).content,
-                    method: getSettingValueFromTree({
-                      tree: ((act as BlockEntity).children || []).map(
+                  ).map((act) => (act as BlockEntity).content),
+                  data: Object.fromEntries(
+                    (
+                      getSubTree({
+                        tree,
+                        key: "Data",
+                      }).children || []
+                    ).map((act) => [
+                      (act as BlockEntity).content,
+                      ((act as BlockEntity).children || []).map(
                         (b) => b as BlockEntity
-                      ),
-                      key: "Method",
-                    }),
-                    args: Object.fromEntries(
-                      (
-                        getSubTree({
-                          key: "Args",
-                          tree: ((act as BlockEntity).children || []).map(
-                            (b) => b as BlockEntity
-                          ),
-                        })?.children || []
-                      ).map((arg) => [
-                        (arg as BlockEntity).content,
-                        ((arg as BlockEntity).children || []).map(
-                          (b) => b as BlockEntity
-                        )[0]?.content,
-                      ])
-                    ),
-                  })),
+                      )[0]?.content,
+                    ])
+                  ),
                 };
               })
             ),
@@ -773,18 +792,18 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     h: HTMLHeadingElement
   ) => {
     const title = h.textContent || "";
-    const page = await window.logseq.Editor.getPage(title);
-    if (!page) return;
-    // @ts-ignore page has properties
-    const uuid = page.properties?.id;
-    if (!isTargeted(uuid)) return;
-    const attribute = `data-logseq-shared-${uuid}`;
+    const notebookPageId = await window.logseq.DB.datascriptQuery(
+      `[:find ?id :where [?p :block/name "${title}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
+    ).then((b) => b[0]?.[0] as string);
+    if (!notebookPageId) return;
+    if (!isTargeted(notebookPageId)) return;
+    const attribute = `data-logseq-shared-${notebookPageId}`;
     const containerParent = h.parentElement?.parentElement;
     if (containerParent && !containerParent.hasAttribute(attribute)) {
-      if (notebookIds.has(uuid)) {
+      if (notebookIds.has(notebookPageId)) {
         containerParent.setAttribute(attribute, "true");
         const unmount = await renderStatus({
-          notebookPageId: uuid,
+          notebookPageId,
           disconnectPage: (id) =>
             disconnectPage(id).then(() => {
               notebookIds.delete(id);
@@ -799,31 +818,38 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     }
   };
 
-  const callback = (h: HTMLHeadingElement) =>
-    renderStatusUnderHeading(() => true, h);
-  const getChildren = (d: Node) =>
-    Array.from((d as HTMLElement).getElementsByClassName("title")).filter(
-      (d) => d.nodeName === "H1"
-    ) as HTMLHeadingElement[];
-  getChildren(document).forEach(callback);
-  const titleObserver = new MutationObserver((records) => {
-    const isNode = (d: Node) =>
-      d.nodeName === "H1" &&
-      Array.from((d as HTMLElement).classList).includes("title");
-    const getNodes = (nodes: NodeList) =>
-      Array.from(nodes)
-        .filter((d: Node) => isNode(d) || d.hasChildNodes())
-        .flatMap((d) => (isNode(d) ? [d] : getChildren(d)));
-    records
-      .flatMap((m) =>
-        getNodes(m.addedNodes).map((node) => node as HTMLHeadingElement)
-      )
-      .forEach(callback);
+  const titleObserver = createHTMLObserver({
+    tag: "H1",
+    className: "title",
+    callback: (h: HTMLHeadingElement) =>
+      renderStatusUnderHeading(() => true, h),
   });
-  titleObserver.observe(window.parent.document.body, {
-    childList: true,
-    subtree: true,
+  const idObserver = createHTMLObserver({
+    tag: "A",
+    className: "page-property-key",
+    callback: (a: HTMLAnchorElement) => {
+      const dataRef = a.getAttribute("data-ref");
+      if (dataRef === "samepage") {
+        const blockContent = a.closest<HTMLDivElement>("div.block-content");
+        if (!blockContent) return;
+        const innerContent = blockContent.querySelector<HTMLDivElement>(
+          ".block-content-inner"
+        );
+        if (!innerContent) return;
+        if (innerContent.innerText) {
+          const blockProperties =
+            blockContent.querySelector<HTMLDivElement>(".block-properties");
+          if (blockProperties) {
+            blockProperties.style.display = "none";
+          }
+        } else {
+          const block = blockContent.closest<HTMLDivElement>("div.ls-block");
+          if (block) block.style.display = "none";
+        }
+      }
+    },
   });
+
   const statusListener = ((e: CustomEvent) => {
     const id = e.detail as string;
     Array.from(
@@ -844,8 +870,9 @@ const setupSharePageWithNotebook = (apps: Apps) => {
       const notebookPage = await window.logseq.Editor.getBlock(blockUuid).then(
         (block) => block && window.logseq.Editor.getPage(block.page.id)
       );
-      // @ts-ignore actually supported
-      const notebookPageId = notebookPage && notebookPage?.properties?.id;
+      const notebookPageId = await window.logseq.DB.datascriptQuery(
+        `[:find ?id :where [?p :block/original-name "${notebookPage?.originalName}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
+      ).then((b) => b[0]?.[0] as string);
       if (notebookIds.has(notebookPageId)) {
         window.clearTimeout(updateTimeout);
         updateTimeout = window.setTimeout(async () => {
@@ -881,6 +908,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     window.parent.document.body.removeEventListener("keydown", bodyListener);
     document.body.removeEventListener(STATUS_EVENT_NAME, statusListener);
     titleObserver.disconnect();
+    idObserver.disconnect();
     unload();
   };
 };

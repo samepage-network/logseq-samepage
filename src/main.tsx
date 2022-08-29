@@ -77,18 +77,8 @@ const main = async () => {
         notify({
           title: "Share Page",
           description: `Notebook ${app}/${evt.source.workspace} is attempting to share page ${evt.notebookPageId}. Would you like to accept?`,
-          actions: [
-            {
-              label: "accept",
-              method: "accept",
-              args,
-            },
-            {
-              label: "reject",
-              method: "reject",
-              args,
-            },
-          ],
+          buttons: ["accept", "reject"],
+          data: args,
         });
       } else if (evt.type === "usage" || "date" in evt) {
         renderOverlay({ Overlay: UsageChart, props: evt });

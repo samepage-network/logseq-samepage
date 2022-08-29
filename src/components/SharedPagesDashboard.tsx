@@ -23,7 +23,7 @@ const PageLink = ({ uuid, onClose }: OverlayProps<{ uuid: string }>) => {
       className="flex"
       style={{ justifyContent: "space-between", alignItems: "center" }}
     >
-      <i>Page was deleted locally. Link another page?</i>{" "}
+      <i>Page {uuid} was deleted locally. Link another page?</i>{" "}
       <Button
         icon={"link"}
         minimal
@@ -39,11 +39,11 @@ const PageLink = ({ uuid, onClose }: OverlayProps<{ uuid: string }>) => {
       onMouseDown={(e) => {
         if (e.shiftKey) {
           logseq.Editor.openInRightSidebar(uuid);
-          e.preventDefault();
-          e.stopPropagation();
         } else {
           window.location.hash = `#/page/${encodeURIComponent(title.toLowerCase())}`;
         }
+        e.preventDefault();
+        e.stopPropagation();
       }}
       onClick={(e) => {
         e.preventDefault();

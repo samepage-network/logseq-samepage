@@ -31,27 +31,37 @@ const LinkNewPage = ({ onClose, uuid }: OverlayProps<{ uuid: string }>) => {
           <Button onClick={onClose} text={"Cancel"} />
           <Button
             onClick={() => {
-              window.logseq.Editor.getPage(name).then((page) => {
-                if (!page) {
-                  window.logseq.UI.showMsg(
-                    `Unknown page name: ${name}`,
-                    "error"
-                  );
-                  return;
-                }
-                apiClient({
-                  oldNotebookPageId: uuid,
-                  newNotebookPageId: page.uuid,
-                  method: "link-different-page",
-                })
-                  .then(() => addIdProperty(page.uuid))
-                  .then(() => {
+              window.logseq.Editor.getPage(name)
+                .then(
+                  (page) =>
+                    page ||
+                    window.logseq.Editor.createPage(
+                      name,
+                      {},
+                      { redirect: false }
+                    )
+                )
+                .then((page) => {
+                  if (!page) {
                     window.logseq.UI.showMsg(
-                      `Successfully linked ${name} to shared page!`
+                      `Unable to link page: ${name}`,
+                      "error"
                     );
-                    onClose();
-                  });
-              });
+                    return;
+                  }
+                  apiClient({
+                    oldNotebookPageId: uuid,
+                    newNotebookPageId: page.uuid,
+                    method: "link-different-page",
+                  })
+                    .then(() => addIdProperty(page))
+                    .then(() => {
+                      window.logseq.UI.showMsg(
+                        `Successfully linked ${name} to shared page!`
+                      );
+                      onClose();
+                    });
+                });
             }}
             text={"Submit"}
             intent={"primary"}
