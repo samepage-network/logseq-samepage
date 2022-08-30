@@ -1,20 +1,23 @@
+import type { AppId, Schema } from "@samepage/shared";
 import loadSharePageWithNotebook from "@samepage/client/protocols/sharePageWithNotebook";
-import renderOverlay from "../components/renderOverlay";
-import SharedPagesDashboard from "../components/SharedPagesDashboard";
-import SharedPageStatus, {
-  Props as SharedPageStatusProps,
-} from "@samepage/client/components/SharedPageStatus";
-import NotificationContainer from "@samepage/client/components/NotificationContainer";
-import Automerge from "automerge";
-import { Apps, AppId, Schema } from "@samepage/shared";
+import SharedPageStatus from "@samepage/client/components/SharedPageStatus";
+import NotificationContainer, {
+  notify,
+} from "@samepage/client/components/NotificationContainer";
+import { onAppEvent } from "@samepage/client/internal/registerAppEventListener";
+import { apps } from "@samepage/client/internal/registry";
 import { BlockEntity, BlockUUIDTuple } from "@logseq/libs/dist/LSPlugin.user";
+import Automerge from "automerge";
 import { openDB, IDBPDatabase } from "idb";
 import { v4 } from "uuid";
-import getPageByPropertyId from "../util/getPageByPropertyId";
-import addIdProperty from "../util/addIdProperty";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import dateFormat from "date-fns/format";
+
+import renderOverlay from "../components/renderOverlay";
+import SharedPagesDashboard from "../components/SharedPagesDashboard";
+import getPageByPropertyId from "../util/getPageByPropertyId";
+import addIdProperty from "../util/addIdProperty";
 
 type InputTextNode = {
   content: string;
@@ -23,36 +26,6 @@ type InputTextNode = {
   viewType: "bullet" | "numbered" | "document";
 };
 const unmountCallbacks = new Set<() => void>();
-
-const renderStatus = (props: SharedPageStatusProps) => {
-  const id = v4();
-  window.logseq.provideUI({
-    path: `div[data-logseq-shared-${props.notebookPageId}=true]`,
-    key: `status-${props.notebookPageId}`,
-    template: `<div id="${id}"></div>`,
-  });
-  return new Promise<() => void>((resolve) =>
-    setTimeout(() => {
-      const parent = window.parent.document.getElementById(id);
-      if (parent) {
-        const root = createRoot(parent);
-        root.render(React.createElement(SharedPageStatus, props));
-        const unmount = () => {
-          unmountCallbacks.delete(unmount);
-          root.unmount();
-          const { parentElement } = parent;
-          if (parentElement)
-            parentElement.removeAttribute(
-              `data-logseq-shared-${props.notebookPageId}`
-            );
-          parent.remove();
-        };
-        unmountCallbacks.add(unmount);
-        resolve(unmount);
-      }
-    })
-  );
-};
 
 const toFlexRegex = (key: string): RegExp =>
   new RegExp(`^\\s*${key.replace(/([()])/g, "\\$1")}\\s*$`, "i");
@@ -310,9 +283,7 @@ const calculateState = async (notebookPageId: string) => {
   };
 };
 
-export const STATUS_EVENT_NAME = "logseq:samepage:status";
-export const notebookIds = new Set<string>();
-const setupSharePageWithNotebook = (apps: Apps) => {
+const setupSharePageWithNotebook = () => {
   const {
     unload,
     updatePage,
@@ -322,9 +293,17 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     forcePushPage,
     listConnectedNotebooks,
     getLocalHistory,
+    isShared,
   } = loadSharePageWithNotebook({
     renderViewPages: (props) =>
       renderOverlay({ Overlay: SharedPagesDashboard, props }),
+    renderSharedPageStatus: ({ notebookPageId, created }) => {
+      Array.from(
+        window.parent.document.querySelectorAll<HTMLHeadingElement>("h1.title")
+      ).forEach((header) => {
+        renderStatusUnderHeading((u) => u === notebookPageId, header, created);
+      });
+    },
 
     getCurrentNotebookPageId: () =>
       logseq.Editor.getCurrentPage().then((p) =>
@@ -401,24 +380,6 @@ const setupSharePageWithNotebook = (apps: Apps) => {
               });
         }
       });
-      // TODO viewType
-      //
-      // const actualPageViewType = (
-      //   window.logseqAlphaAPI.pull("[:children/view-type]", [
-      //     ":block/uid",
-      //     notebookPageId,
-      //   ])?.[":children/view-type"] || ":bullet"
-      // ).slice(1);
-      // const viewTypePromise =
-      //   expectedPageViewType !== actualPageViewType
-      //     ? () =>
-      //         window.logseqAlphaAPI.updateBlock({
-      //           block: {
-      //             uid: notebookPageId,
-      //             "children-view-type": expectedPageViewType,
-      //           },
-      //         })
-      //     : Promise.resolve("");
       const expectedTreeMapping = Object.fromEntries(
         flattenTree(expectedTree, notebookPageId)
           .filter((n) => !!n.uuid)
@@ -791,10 +752,25 @@ const setupSharePageWithNotebook = (apps: Apps) => {
       },
     },
   });
+  onAppEvent("share-page", (evt) => {
+    const app = apps[evt.source.app]?.name;
+    const args = {
+      workspace: evt.source.workspace,
+      app: `${evt.source.app}`,
+      pageUuid: evt.pageUuid,
+    };
+    notify({
+      title: "Share Page",
+      description: `Notebook ${app}/${evt.source.workspace} is attempting to share page ${evt.notebookPageId}. Would you like to accept?`,
+      buttons: ["accept", "reject"],
+      data: args,
+    });
+  });
 
   const renderStatusUnderHeading = async (
     isTargeted: (uid: string) => boolean,
-    h: HTMLHeadingElement
+    h: HTMLHeadingElement,
+    created?: boolean
   ) => {
     const title = h.textContent || "";
     const notebookPageId = await window.logseq.DB.datascriptQuery(
@@ -804,22 +780,46 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     if (!isTargeted(notebookPageId)) return;
     const attribute = `data-logseq-shared-${notebookPageId}`;
     const containerParent = h.parentElement?.parentElement;
-    if (containerParent && !containerParent.hasAttribute(attribute)) {
-      if (notebookIds.has(notebookPageId)) {
-        containerParent.setAttribute(attribute, "true");
-        const unmount = await renderStatus({
-          notebookPageId,
-          disconnectPage: (id) =>
-            disconnectPage(id).then(() => {
-              notebookIds.delete(id);
-              unmount();
-            }),
-          forcePushPage,
-          listConnectedNotebooks,
-          getLocalHistory,
-          portalContainer: window.parent.document.body,
-        });
-      }
+    if (
+      containerParent &&
+      !containerParent.hasAttribute(attribute) &&
+      isShared(notebookPageId)
+    ) {
+      containerParent.setAttribute(attribute, "true");
+      const id = v4();
+      window.logseq.provideUI({
+        path: `div[data-logseq-shared-${notebookPageId}=true]`,
+        key: `status-${notebookPageId}`,
+        template: `<div id="${id}"></div>`,
+      });
+      setTimeout(() => {
+        const parent = window.parent.document.getElementById(id);
+        if (parent) {
+          const root = createRoot(parent);
+          const unmount = () => {
+            unmountCallbacks.delete(unmount);
+            root.unmount();
+            const { parentElement } = parent;
+            if (parentElement)
+              parentElement.removeAttribute(
+                `data-samepage-shared-${notebookPageId}`
+              );
+            parent.remove();
+          };
+          root.render(
+            React.createElement(SharedPageStatus, {
+              notebookPageId,
+              disconnectPage: (id) => disconnectPage(id).then(unmount),
+              forcePushPage,
+              listConnectedNotebooks,
+              getLocalHistory,
+              portalContainer: window.parent.document.body,
+              defaultOpenInviteDialog: created,
+            })
+          );
+          unmountCallbacks.add(unmount);
+        }
+      });
     }
   };
 
@@ -855,15 +855,6 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     },
   });
 
-  const statusListener = ((e: CustomEvent) => {
-    const id = e.detail as string;
-    Array.from(
-      window.parent.document.querySelectorAll<HTMLHeadingElement>("h1.title")
-    ).forEach((header) => {
-      renderStatusUnderHeading((u) => u === id, header);
-    });
-  }) as EventListener;
-  document.body.addEventListener(STATUS_EVENT_NAME, statusListener);
   let updateTimeout = 0;
   const bodyListener = async (e: KeyboardEvent) => {
     const el = e.target as HTMLElement;
@@ -878,7 +869,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
       const notebookPageId = await window.logseq.DB.datascriptQuery(
         `[:find ?id :where [?p :block/original-name "${notebookPage?.originalName}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
       ).then((b) => b[0]?.[0] as string);
-      if (notebookIds.has(notebookPageId)) {
+      if (isShared(notebookPageId)) {
         window.clearTimeout(updateTimeout);
         updateTimeout = window.setTimeout(async () => {
           const doc = await calculateState(notebookPageId);
@@ -911,7 +902,6 @@ const setupSharePageWithNotebook = (apps: Apps) => {
     window.clearTimeout(updateTimeout);
     Array.from(unmountCallbacks).forEach((c) => c());
     window.parent.document.body.removeEventListener("keydown", bodyListener);
-    document.body.removeEventListener(STATUS_EVENT_NAME, statusListener);
     titleObserver.disconnect();
     idObserver.disconnect();
     unload();

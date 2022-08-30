@@ -1,15 +1,11 @@
 import "@logseq/libs";
 import "./index.css";
 import setupSamePageClient from "@samepage/client/protocols/setupSamePageClient";
+import { onAppEvent } from "@samepage/client/internal/registerAppEventListener";
 import UsageChart from "./components/UsageChart";
-import { notify } from "@samepage/client/components/NotificationContainer";
 import { renderLoading } from "./components/Loading";
-import setupSharePageWithNotebook, {
-  notebookIds,
-  STATUS_EVENT_NAME,
-} from "./protocols/sharePageWithNotebook";
+import setupSharePageWithNotebook from "./protocols/sharePageWithNotebook";
 import renderOverlay from "./components/renderOverlay";
-import getPageByPropertyId from "./util/getPageByPropertyId";
 
 const main = async () => {
   logseq.useSettingsSchema([
@@ -29,7 +25,7 @@ const main = async () => {
   // logseq commands arent idempotent -.-
   const commandsRegistered = new Set<string>();
   let removeLoadingCallback: (() => void) | undefined;
-  const { unload: unloadSamePageClient, apps } = await setupSamePageClient({
+  const { unload: unloadSamePageClient } = setupSamePageClient({
     isAutoConnect: logseq.settings?.["auto-connect"] as boolean,
     app: 2,
     workspace,
@@ -49,47 +45,23 @@ const main = async () => {
         commandsRegistered.delete(key);
       }
     },
-    onAppEventHandler: (evt) => {
-      if (evt.type === "log") {
-        window.logseq.UI.showMsg(
-          evt.content,
-          evt.intent === "info" ? "success" : evt.intent,
-          { timeout: 5000 }
-        );
-      } else if (evt.type === "init-page") {
-        getPageByPropertyId(evt.notebookPageId).then((block) => {
-          if (block) {
-            notebookIds.add(evt.notebookPageId);
-            document.body.dispatchEvent(
-              new CustomEvent(STATUS_EVENT_NAME, {
-                detail: evt.notebookPageId,
-              })
-            );
-          }
-        });
-      } else if (evt.type === "share-page") {
-        const app = apps[evt.source.app]?.name;
-        const args = {
-          workspace: evt.source.workspace,
-          app: `${evt.source.app}`,
-          pageUuid: evt.pageUuid,
-        };
-        notify({
-          title: "Share Page",
-          description: `Notebook ${app}/${evt.source.workspace} is attempting to share page ${evt.notebookPageId}. Would you like to accept?`,
-          buttons: ["accept", "reject"],
-          data: args,
-        });
-      } else if (evt.type === "usage" || "date" in evt) {
-        renderOverlay({ Overlay: UsageChart, props: evt });
-      } else if (evt.type === "connection") {
-        if (evt.status === "PENDING")
-          renderLoading().then((c) => (removeLoadingCallback = c));
-        else removeLoadingCallback?.();
-      }
-    },
   });
-  const unloadSharePageWithNotebook = setupSharePageWithNotebook(apps);
+  onAppEvent("log", (evt) =>
+    window.logseq.UI.showMsg(
+      evt.content,
+      evt.intent === "info" ? "success" : evt.intent,
+      { timeout: 5000 }
+    )
+  );
+  onAppEvent("usage", (evt) =>
+    renderOverlay({ Overlay: UsageChart, props: evt })
+  );
+  onAppEvent("connection", (evt) => {
+    if (evt.status === "PENDING")
+      renderLoading().then((c) => (removeLoadingCallback = c));
+    else removeLoadingCallback?.();
+  });
+  const unloadSharePageWithNotebook = setupSharePageWithNotebook();
 
   logseq.provideStyle(`@import url("https://unpkg.com/normalize.css@^8.0.1");
 @import url("https://unpkg.com/@blueprintjs/core@^4.8.0/lib/css/blueprint.css");
