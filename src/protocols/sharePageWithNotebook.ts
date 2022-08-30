@@ -129,12 +129,12 @@ const openIdb = async () =>
   }));
 
 const toAtJson = async ({
-  nodes,
+  nodes = [],
   level = 0,
   startIndex = 0,
   viewType = "bullet",
 }: {
-  nodes: BlockEntity[];
+  nodes?: BlockEntity[];
   level?: number;
   startIndex?: number;
   viewType?: InputTextNode["viewType"];
@@ -151,10 +151,15 @@ const toAtJson = async ({
               )
           )
           .then(async (identifier) => {
-            const content = n.content.replace(
-              new RegExp(`\\nid:: ${n.uuid}$`),
-              ""
-            );
+            const content = n.content
+              .replace(new RegExp(`\\nid:: ${n.uuid}`), "")
+              .replace(new RegExp(`\\ntitle:: [^\\n]+`), "")
+              .replace(
+                new RegExp(
+                  `\\nsamepage:: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
+                ),
+                ""
+              );
             const end = content.length + index;
             const annotations: Schema["annotations"] = [
               {
@@ -218,7 +223,7 @@ const flattenTree = <
 
 // const PROPERTIES_REGEX = /^()+$/s
 const isContentBlock = (b: BlockEntity) => {
-  const props = b.propertiesOrder as string[];
+  const props = (b.propertiesOrder as string[]) || [];
   return (
     !b.content ||
     !!props.reduce(
@@ -355,16 +360,15 @@ const setupSharePageWithNotebook = (apps: Apps) => {
           };
           mapping[currentBlock.uuid] = currentBlock;
           insertAtLevel(expectedTree, anno.attributes["level"], notebookPageId);
-          const parentUid = parents[currentBlock.uuid];
+          const parentUuid = parents[currentBlock.uuid];
           const viewType = anno.attributes["viewType"];
-          if (parentUid === notebookPageId) {
+          if (parentUuid === notebookPageId) {
             expectedPageViewType = viewType;
-          } else mapping[parentUid].viewType = viewType;
+          } else mapping[parentUuid].viewType = viewType;
         } else if (anno.type === "metadata") {
-          const title = anno.attributes.title;
-          const parentUid = anno.attributes.parent;
+          const { title, parent } = anno.attributes;
           initialPromise = () =>
-            (parentUid
+            (parent
               ? window.logseq.Editor.getBlock(notebookPageId)
               : getPageByPropertyId(notebookPageId)
             )
@@ -373,7 +377,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
                   const existingTitle =
                     node.originalName || (node as BlockEntity).content;
                   if (existingTitle !== title) {
-                    if (parentUid) {
+                    if (parent) {
                       return window.logseq.Editor.getBlock(notebookPageId).then(
                         (block) =>
                           block &&
@@ -488,9 +492,10 @@ const setupSharePageWithNotebook = (apps: Apps) => {
                       : window.logseq.Editor.getPageBlocksTree(
                           p.originalName
                         ).then((tree) =>
-                          (order < tree.length
+                          // minus 1 because of the persistent id hack -.-
+                          (order < tree.length - 1
                             ? window.logseq.Editor.insertBlock(
-                                tree[order].uuid,
+                                tree[order + 1].uuid,
                                 node.content,
                                 { before: true }
                               )
@@ -793,7 +798,7 @@ const setupSharePageWithNotebook = (apps: Apps) => {
   ) => {
     const title = h.textContent || "";
     const notebookPageId = await window.logseq.DB.datascriptQuery(
-      `[:find ?id :where [?p :block/name "${title}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
+      `[:find ?id :where [?p :block/name "${title.toLowerCase()}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
     ).then((b) => b[0]?.[0] as string);
     if (!notebookPageId) return;
     if (!isTargeted(notebookPageId)) return;
