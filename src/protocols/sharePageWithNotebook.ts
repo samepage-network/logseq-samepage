@@ -1,10 +1,7 @@
-import type { AppId, Schema } from "@samepage/shared";
+import type { AppId, Schema } from "@samepage/client/types";
 import loadSharePageWithNotebook from "@samepage/client/protocols/sharePageWithNotebook";
 import SharedPageStatus from "@samepage/client/components/SharedPageStatus";
-import NotificationContainer, {
-  notify,
-} from "@samepage/client/components/NotificationContainer";
-import { onAppEvent } from "@samepage/client/internal/registerAppEventListener";
+import NotificationContainer from "@samepage/client/components/NotificationContainer";
 import { apps } from "@samepage/client/internal/registry";
 import { BlockEntity, BlockUUIDTuple } from "@logseq/libs/dist/LSPlugin.user";
 import Automerge from "automerge";
@@ -18,6 +15,8 @@ import renderOverlay from "../components/renderOverlay";
 import SharedPagesDashboard from "../components/SharedPagesDashboard";
 import getPageByPropertyId from "../util/getPageByPropertyId";
 import addIdProperty from "../util/addIdProperty";
+import blockLexer from "../util/blockLexer";
+import { Token } from "../util/blockTokens";
 
 type InputTextNode = {
   content: string;
@@ -101,6 +100,124 @@ const openIdb = async () =>
     },
   }));
 
+type InputSchema = {
+  content: string;
+  annotations: Schema["annotations"];
+};
+
+const reduceTokens = (tokens: Token[]): InputSchema =>
+  tokens
+    .map((token) => {
+      switch (token.type) {
+        case "strikethrough": {
+          const innerState = reduceTokens(token.tokens);
+          return {
+            content: innerState.content,
+            annotations: (
+              [
+                {
+                  type: "strikethrough",
+                  start: 0,
+                  end: innerState.content.length,
+                },
+              ] as Schema["annotations"]
+            ).concat(innerState.annotations),
+          };
+        }
+        case "italics": {
+          const innerState = reduceTokens(token.tokens);
+          return {
+            content: innerState.content,
+            annotations: (
+              [
+                {
+                  type: "italics",
+                  start: 0,
+                  end: innerState.content.length,
+                },
+              ] as Schema["annotations"]
+            ).concat(innerState.annotations),
+          };
+        }
+        case "highlighting": {
+          const innerState = reduceTokens(token.tokens);
+          return {
+            content: innerState.content,
+            annotations: (
+              [
+                {
+                  type: "highlighting",
+                  start: 0,
+                  end: innerState.content.length,
+                },
+              ] as Schema["annotations"]
+            ).concat(innerState.annotations),
+          };
+        }
+        case "link": {
+          const innerState = reduceTokens(token.tokens);
+          return {
+            content: innerState.content,
+            annotations: (
+              [
+                {
+                  type: "link",
+                  start: 0,
+                  end: innerState.content.length,
+                  attributes: {
+                    href: token.href,
+                  },
+                },
+              ] as Schema["annotations"]
+            ).concat(innerState.annotations),
+          };
+        }
+        case "bold": {
+          const innerState = reduceTokens(token.tokens);
+          return {
+            content: innerState.content,
+            annotations: (
+              [
+                {
+                  type: "bold",
+                  start: 0,
+                  end: innerState.content.length,
+                },
+              ] as Schema["annotations"]
+            ).concat(innerState.annotations),
+          };
+        }
+        case "text": {
+          return {
+            content: token.text,
+            annotations: [] as Schema["annotations"],
+          };
+        }
+        default: {
+          return {
+            content: "",
+            annotations: [] as Schema["annotations"],
+          };
+        }
+      }
+    })
+    .reduce(
+      (total, current) => ({
+        content: `${total.content}${current.content}`,
+        annotations: total.annotations.concat(
+          current.annotations.map((a) => ({
+            ...a,
+            start: a.start + total.content.length,
+            end: a.end + total.content.length,
+          }))
+        ),
+      }),
+      {
+        content: "",
+        annotations: [],
+      } as InputSchema
+    );
+
 const toAtJson = async ({
   nodes = [],
   level = 0,
@@ -111,7 +228,7 @@ const toAtJson = async ({
   level?: number;
   startIndex?: number;
   viewType?: InputTextNode["viewType"];
-}): Promise<Omit<Schema, "contentType">> => {
+}): Promise<InputSchema> => {
   return nodes
     .map(
       (n) => (index: number) =>
@@ -124,7 +241,7 @@ const toAtJson = async ({
               )
           )
           .then(async (identifier) => {
-            const content = n.content
+            const preContent = n.content
               .replace(new RegExp(`\\nid:: ${n.uuid}`), "")
               .replace(new RegExp(`\\ntitle:: [^\\n]+`), "")
               .replace(
@@ -133,8 +250,11 @@ const toAtJson = async ({
                 ),
                 ""
               );
+            const { content, annotations } = reduceTokens(
+              blockLexer(preContent)
+            );
             const end = content.length + index;
-            const annotations: Schema["annotations"] = [
+            const blockAnnotations: Schema["annotations"] = [
               {
                 start: index,
                 end,
@@ -158,8 +278,16 @@ const toAtJson = async ({
               startIndex: end,
             });
             return {
-              content: new Automerge.Text(`${content}${childrenContent}`),
-              annotations: annotations.concat(childrenAnnotations),
+              content: `${content}${childrenContent}`,
+              annotations: blockAnnotations
+                .concat(
+                  annotations.map((a) => ({
+                    ...a,
+                    start: a.start + index,
+                    end: a.end + index,
+                  }))
+                )
+                .concat(childrenAnnotations),
             };
           })
     )
@@ -168,13 +296,13 @@ const toAtJson = async ({
         p.then(({ content: pc, annotations: pa }) =>
           c(startIndex + pc.length).then(
             ({ content: cc, annotations: ca }) => ({
-              content: new Automerge.Text(`${pc}${cc}`),
+              content: `${pc}${cc}`,
               annotations: pa.concat(ca),
             })
           )
         ),
       Promise.resolve({
-        content: new Automerge.Text(""),
+        content: "",
         annotations: [] as Schema["annotations"],
       })
     );
@@ -283,6 +411,316 @@ const calculateState = async (notebookPageId: string) => {
   };
 };
 
+const applyState = async (notebookPageId: string, state: Schema) => {
+  const expectedTree: InputTextNode[] = [];
+  const mapping: Record<string, InputTextNode> = {};
+  const contentAnnotations: Record<
+    string,
+    { start: number; end: number; annotations: Schema["annotations"] }
+  > = {};
+  const parents: Record<string, string> = {};
+  let currentBlock: InputTextNode;
+  let initialPromise = () => Promise.resolve<unknown>("");
+  const insertAtLevel = (
+    nodes: InputTextNode[],
+    level: number,
+    parentUuid: string
+  ) => {
+    if (level === 0 || nodes.length === 0) {
+      nodes.push(currentBlock);
+      parents[currentBlock.uuid] = parentUuid;
+    } else {
+      const parentNode = nodes[nodes.length - 1];
+      insertAtLevel(parentNode.children, level - 1, parentNode.uuid);
+    }
+  };
+  state.annotations.forEach((anno) => {
+    if (anno.type === "block") {
+      currentBlock = {
+        content: state.content.slice(anno.start, anno.end).join(""),
+        children: [],
+        uuid: anno.attributes["identifier"],
+        viewType: "bullet",
+      };
+      mapping[currentBlock.uuid] = currentBlock;
+      contentAnnotations[currentBlock.uuid] = {
+        start: anno.start,
+        end: anno.end,
+        annotations: [],
+      };
+      insertAtLevel(expectedTree, anno.attributes["level"], notebookPageId);
+    } else if (anno.type === "metadata") {
+      const { title, parent } = anno.attributes;
+      initialPromise = () =>
+        (parent
+          ? window.logseq.Editor.getBlock(notebookPageId)
+          : getPageByPropertyId(notebookPageId)
+        )
+          .then(async (node) => {
+            if (node) {
+              const existingTitle =
+                node.originalName || (node as BlockEntity).content;
+              if (existingTitle !== title) {
+                if (parent) {
+                  return window.logseq.Editor.getBlock(notebookPageId).then(
+                    (block) =>
+                      block &&
+                      window.logseq.Editor.updateBlock(block.uuid, title)
+                  );
+                } else {
+                  return window.logseq.Editor.renamePage(existingTitle, title);
+                }
+              }
+            } else {
+              throw new Error(`Missing page with id: ${notebookPageId}`);
+            }
+          })
+          .catch((e) => {
+            return Promise.reject(
+              new Error(`Failed to initialize page metadata: ${e.message}`)
+            );
+          });
+    } else {
+      const contentAnnotation = Object.values(contentAnnotations).find(
+        (ca) => ca.start <= anno.start && anno.end <= ca.end
+      );
+      if (contentAnnotation) {
+        contentAnnotation.annotations.push(anno);
+      }
+    }
+  });
+  Object.entries(contentAnnotations).forEach(
+    ([blockUid, contentAnnotation]) => {
+      const block = mapping[blockUid];
+      const offset = contentAnnotation.start;
+      const normalizedAnnotations = contentAnnotation.annotations.map((a) => ({
+        ...a,
+        start: a.start - offset,
+        end: a.end - offset,
+      }));
+      const annotatedText = normalizedAnnotations.reduce((p, c, index, all) => {
+        const appliedAnnotation =
+          c.type === "bold"
+            ? {
+                prefix: "**",
+                suffix: `**`,
+              }
+            : c.type === "highlighting"
+            ? {
+                prefix: "^^",
+                suffix: `^^`,
+              }
+            : c.type === "italics"
+            ? {
+                prefix: "_",
+                suffix: `_`,
+              }
+            : c.type === "strikethrough"
+            ? {
+                prefix: "~~",
+                suffix: `~~`,
+              }
+            : c.type === "link"
+            ? {
+                prefix: "[",
+                suffix: `](${c.attributes.href})`,
+              }
+            : { prefix: "", suffix: "" };
+        all.slice(index + 1).forEach((a) => {
+          a.start +=
+            (a.start >= c.start ? appliedAnnotation.prefix.length : 0) +
+            (a.start >= c.end ? appliedAnnotation.suffix.length : 0);
+          a.end +=
+            (a.end >= c.start ? appliedAnnotation.prefix.length : 0) +
+            (a.end > c.end ? appliedAnnotation.suffix.length : 0);
+        });
+        return `${p.slice(0, c.start)}${appliedAnnotation.prefix}${p.slice(
+          c.start,
+          c.end
+        )}${appliedAnnotation.suffix}${p.slice(c.end)}`;
+      }, block.content);
+      block.content = annotatedText;
+    }
+  );
+  const expectedTreeMapping = Object.fromEntries(
+    flattenTree(expectedTree, notebookPageId)
+      .filter((n) => !!n.uuid)
+      .map(({ uuid, ...n }) => [uuid, n])
+  );
+  const actualTreeMapping = await getPageByPropertyId(notebookPageId)
+    .then((page) =>
+      page
+        ? window.logseq.Editor.getPageBlocksTree(page.originalName).then(
+            (tree) => tree || []
+          )
+        : []
+    )
+    .then((tree = []) =>
+      Object.fromEntries(
+        flattenTree(tree.filter(isContentBlock), notebookPageId).map(
+          ({ uuid, ...n }) => [uuid, n]
+        )
+      )
+    )
+    .then((a) => a as Record<string, BlockEntity>);
+  const expectedSamepageToLogseq = await Promise.all(
+    Object.keys(expectedTreeMapping).map((k) =>
+      samepageToLogseq(k).then((r) => [k, r] as const)
+    )
+  )
+    .then((keys) => Object.fromEntries(keys))
+    .then((a) => a as Record<string, string>);
+
+  const uuidsToCreate = Object.entries(expectedSamepageToLogseq).filter(
+    ([, k]) => !k || !actualTreeMapping[k]
+  );
+  const expectedUuids = new Set(
+    Object.values(expectedSamepageToLogseq).filter((r) => !!r)
+  );
+  const uuidsToDelete = Object.keys(actualTreeMapping).filter(
+    (k) => !expectedUuids.has(k)
+  );
+  const uuidsToUpdate = Object.entries(expectedSamepageToLogseq).filter(
+    ([, k]) => !!actualTreeMapping[k]
+  );
+  const promises = (
+    [
+      initialPromise,
+      //viewTypePromise
+    ] as (() => Promise<unknown>)[]
+  )
+    .concat(
+      uuidsToDelete.map(
+        (uuid) => () =>
+          window.logseq.Editor.removeBlock(uuid)
+            .then(() => removeLogseqUuid(uuid))
+            .catch((e) => {
+              return Promise.reject(
+                new Error(`Failed to remove block ${uuid}: ${e.message}`)
+              );
+            })
+      )
+    )
+    .concat(
+      uuidsToCreate.map(([samepageUuid]) => async () => {
+        const { parentUuid, order, ...node } =
+          expectedTreeMapping[samepageUuid];
+        return (
+          parentUuid === notebookPageId
+            ? getPageByPropertyId(notebookPageId).then((p) =>
+                !p
+                  ? Promise.reject(
+                      new Error(`Failed to find page ${notebookPageId}`)
+                    )
+                  : window.logseq.Editor.getPageBlocksTree(p.originalName).then(
+                      (tree) =>
+                        // minus 1 because of the persistent id hack -.-
+                        (order < tree.length - 1
+                          ? window.logseq.Editor.insertBlock(
+                              tree[order + 1].uuid,
+                              node.content,
+                              { before: true }
+                            )
+                          : window.logseq.Editor.appendBlockInPage(
+                              p?.originalName,
+                              node.content
+                            )
+                        ).then(
+                          (block) =>
+                            block &&
+                            window.logseq.Editor.upsertBlockProperty(
+                              block.uuid,
+                              "id",
+                              block.uuid
+                            ).then(() => block.uuid)
+                        )
+                    )
+              )
+            : window.logseq.Editor.getBlock(
+                expectedSamepageToLogseq[parentUuid],
+                { includeChildren: true }
+              )
+                .then((block) =>
+                  !block
+                    ? Promise.reject(
+                        new Error(
+                          `Referencing parent ${parentUuid} but none exists`
+                        )
+                      )
+                    : order < (block?.children?.length || 0)
+                    ? window.logseq.Editor.insertBlock(
+                        (block?.children?.[order] as BlockEntity).uuid,
+                        node.content
+                      )
+                    : window.logseq.Editor.appendBlockInPage(
+                        expectedSamepageToLogseq[parentUuid],
+                        node.content
+                      )
+                )
+                .then(
+                  (block) =>
+                    block &&
+                    window.logseq.Editor.upsertBlockProperty(
+                      block.uuid,
+                      "id",
+                      block.uuid
+                    ).then(() => block.uuid)
+                )
+        )
+          .then((uuid) =>
+            uuid
+              ? saveIdMap(uuid, samepageUuid).then(
+                  () => (expectedSamepageToLogseq[samepageUuid] = uuid)
+                )
+              : Promise.reject(new Error(`null block uuid created`))
+          )
+          .catch((e) => {
+            return Promise.reject(
+              new Error(`Failed to insert block ${samepageUuid}: ${e.message}`)
+            );
+          });
+      })
+    )
+    .concat(
+      uuidsToUpdate.map(([samepageUuid, logseqUuid]) => () => {
+        const {
+          parentUuid: samepageParentUuid,
+          order,
+          ...node
+        } = expectedTreeMapping[samepageUuid];
+        const parentUuid =
+          samepageParentUuid === notebookPageId
+            ? samepageParentUuid
+            : expectedSamepageToLogseq[samepageParentUuid];
+        const actual = actualTreeMapping[logseqUuid];
+        // it's possible we may need to await from above and repull
+        if (actual.parentUuid !== parentUuid || actual.order !== order) {
+          return window.logseq.Editor.moveBlock(
+            logseqUuid,
+            parentUuid
+            // use order to determine `before` or `children`
+          ).catch((e) => {
+            return Promise.reject(
+              new Error(`Failed to move block ${samepageUuid}: ${e.message}`)
+            );
+          });
+        } else if (actual.content !== node.content) {
+          return window.logseq.Editor.updateBlock(
+            logseqUuid,
+            node.content
+          ).catch((e) => {
+            return Promise.reject(
+              new Error(`Failed to update block ${samepageUuid}: ${e.message}`)
+            );
+          });
+        } else {
+          return Promise.resolve("");
+        }
+      })
+    );
+  return promises.reduce((p, c) => p.then(c), Promise.resolve<unknown>(""));
+};
+
 const setupSharePageWithNotebook = () => {
   const {
     unload,
@@ -309,262 +747,7 @@ const setupSharePageWithNotebook = () => {
       logseq.Editor.getCurrentPage().then((p) =>
         p && !("page" in p) ? addIdProperty(p).then(() => p.uuid) : ""
       ),
-    applyState: async (notebookPageId, state) => {
-      const expectedTree: InputTextNode[] = [];
-      const mapping: Record<string, InputTextNode> = {};
-      const parents: Record<string, string> = {};
-      let expectedPageViewType = "bullet";
-      let currentBlock: InputTextNode;
-      let initialPromise = () => Promise.resolve<unknown>("");
-      const insertAtLevel = (
-        nodes: InputTextNode[],
-        level: number,
-        parentUuid: string
-      ) => {
-        if (level === 0 || nodes.length === 0) {
-          nodes.push(currentBlock);
-          parents[currentBlock.uuid] = parentUuid;
-        } else {
-          const parentNode = nodes[nodes.length - 1];
-          insertAtLevel(parentNode.children, level - 1, parentNode.uuid);
-        }
-      };
-      state.annotations.forEach((anno) => {
-        if (anno.type === "block") {
-          currentBlock = {
-            content: state.content.slice(anno.start, anno.end).join(""),
-            children: [],
-            uuid: anno.attributes["identifier"],
-            viewType: "bullet",
-          };
-          mapping[currentBlock.uuid] = currentBlock;
-          insertAtLevel(expectedTree, anno.attributes["level"], notebookPageId);
-          const parentUuid = parents[currentBlock.uuid];
-          const viewType = anno.attributes["viewType"];
-          if (parentUuid === notebookPageId) {
-            expectedPageViewType = viewType;
-          } else mapping[parentUuid].viewType = viewType;
-        } else if (anno.type === "metadata") {
-          const { title, parent } = anno.attributes;
-          initialPromise = () =>
-            (parent
-              ? window.logseq.Editor.getBlock(notebookPageId)
-              : getPageByPropertyId(notebookPageId)
-            )
-              .then(async (node) => {
-                if (node) {
-                  const existingTitle =
-                    node.originalName || (node as BlockEntity).content;
-                  if (existingTitle !== title) {
-                    if (parent) {
-                      return window.logseq.Editor.getBlock(notebookPageId).then(
-                        (block) =>
-                          block &&
-                          window.logseq.Editor.updateBlock(block.uuid, title)
-                      );
-                    } else {
-                      return window.logseq.Editor.renamePage(
-                        existingTitle,
-                        title
-                      );
-                    }
-                  }
-                } else {
-                  throw new Error(`Missing page with id: ${notebookPageId}`);
-                }
-              })
-              .catch((e) => {
-                return Promise.reject(
-                  new Error(`Failed to initialize page metadata: ${e.message}`)
-                );
-              });
-        }
-      });
-      const expectedTreeMapping = Object.fromEntries(
-        flattenTree(expectedTree, notebookPageId)
-          .filter((n) => !!n.uuid)
-          .map(({ uuid, ...n }) => [uuid, n])
-      );
-      const actualTreeMapping = await getPageByPropertyId(notebookPageId)
-        .then((page) =>
-          page
-            ? window.logseq.Editor.getPageBlocksTree(page.originalName).then(
-                (tree) => tree || []
-              )
-            : []
-        )
-        .then((tree = []) =>
-          Object.fromEntries(
-            flattenTree(tree.filter(isContentBlock), notebookPageId).map(
-              ({ uuid, ...n }) => [uuid, n]
-            )
-          )
-        )
-        .then((a) => a as Record<string, BlockEntity>);
-      const expectedSamepageToLogseq = await Promise.all(
-        Object.keys(expectedTreeMapping).map((k) =>
-          samepageToLogseq(k).then((r) => [k, r] as const)
-        )
-      )
-        .then((keys) => Object.fromEntries(keys))
-        .then((a) => a as Record<string, string>);
-
-      const uuidsToCreate = Object.entries(expectedSamepageToLogseq).filter(
-        ([, k]) => !k || !actualTreeMapping[k]
-      );
-      const expectedUuids = new Set(
-        Object.values(expectedSamepageToLogseq).filter((r) => !!r)
-      );
-      const uuidsToDelete = Object.keys(actualTreeMapping).filter(
-        (k) => !expectedUuids.has(k)
-      );
-      const uuidsToUpdate = Object.entries(expectedSamepageToLogseq).filter(
-        ([, k]) => !!actualTreeMapping[k]
-      );
-      const promises = (
-        [
-          initialPromise,
-          //viewTypePromise
-        ] as (() => Promise<unknown>)[]
-      )
-        .concat(
-          uuidsToDelete.map(
-            (uuid) => () =>
-              window.logseq.Editor.removeBlock(uuid)
-                .then(() => removeLogseqUuid(uuid))
-                .catch((e) => {
-                  return Promise.reject(
-                    new Error(`Failed to remove block ${uuid}: ${e.message}`)
-                  );
-                })
-          )
-        )
-        .concat(
-          uuidsToCreate.map(([samepageUuid]) => async () => {
-            const { parentUuid, order, ...node } =
-              expectedTreeMapping[samepageUuid];
-            return (
-              parentUuid === notebookPageId
-                ? getPageByPropertyId(notebookPageId).then((p) =>
-                    !p
-                      ? Promise.reject(
-                          new Error(`Failed to find page ${notebookPageId}`)
-                        )
-                      : window.logseq.Editor.getPageBlocksTree(
-                          p.originalName
-                        ).then((tree) =>
-                          // minus 1 because of the persistent id hack -.-
-                          (order < tree.length - 1
-                            ? window.logseq.Editor.insertBlock(
-                                tree[order + 1].uuid,
-                                node.content,
-                                { before: true }
-                              )
-                            : window.logseq.Editor.appendBlockInPage(
-                                p?.originalName,
-                                node.content
-                              )
-                          ).then(
-                            (block) =>
-                              block &&
-                              window.logseq.Editor.upsertBlockProperty(
-                                block.uuid,
-                                "id",
-                                block.uuid
-                              ).then(() => block.uuid)
-                          )
-                        )
-                  )
-                : window.logseq.Editor.getBlock(
-                    expectedSamepageToLogseq[parentUuid],
-                    { includeChildren: true }
-                  )
-                    .then((block) =>
-                      !block
-                        ? Promise.reject(
-                            new Error(
-                              `Referencing parent ${parentUuid} but none exists`
-                            )
-                          )
-                        : order < (block?.children?.length || 0)
-                        ? window.logseq.Editor.insertBlock(
-                            (block?.children?.[order] as BlockEntity).uuid,
-                            node.content
-                          )
-                        : window.logseq.Editor.appendBlockInPage(
-                            expectedSamepageToLogseq[parentUuid],
-                            node.content
-                          )
-                    )
-                    .then(
-                      (block) =>
-                        block &&
-                        window.logseq.Editor.upsertBlockProperty(
-                          block.uuid,
-                          "id",
-                          block.uuid
-                        ).then(() => block.uuid)
-                    )
-            )
-              .then((uuid) =>
-                uuid
-                  ? saveIdMap(uuid, samepageUuid).then(
-                      () => (expectedSamepageToLogseq[samepageUuid] = uuid)
-                    )
-                  : Promise.reject(new Error(`null block uuid created`))
-              )
-              .catch((e) => {
-                return Promise.reject(
-                  new Error(
-                    `Failed to insert block ${samepageUuid}: ${e.message}`
-                  )
-                );
-              });
-          })
-        )
-        .concat(
-          uuidsToUpdate.map(([samepageUuid, logseqUuid]) => () => {
-            const {
-              parentUuid: samepageParentUuid,
-              order,
-              ...node
-            } = expectedTreeMapping[samepageUuid];
-            const parentUuid =
-              samepageParentUuid === notebookPageId
-                ? samepageParentUuid
-                : expectedSamepageToLogseq[samepageParentUuid];
-            const actual = actualTreeMapping[logseqUuid];
-            // it's possible we may need to await from above and repull
-            if (actual.parentUuid !== parentUuid || actual.order !== order) {
-              return window.logseq.Editor.moveBlock(
-                logseqUuid,
-                parentUuid
-                // use order to determine `before` or `children`
-              ).catch((e) => {
-                return Promise.reject(
-                  new Error(
-                    `Failed to move block ${samepageUuid}: ${e.message}`
-                  )
-                );
-              });
-            } else if (actual.content !== node.content) {
-              return window.logseq.Editor.updateBlock(
-                logseqUuid,
-                node.content
-              ).catch((e) => {
-                return Promise.reject(
-                  new Error(
-                    `Failed to update block ${samepageUuid}: ${e.message}`
-                  )
-                );
-              });
-            } else {
-              return Promise.resolve("");
-            }
-          })
-        );
-      return promises.reduce((p, c) => p.then(c), Promise.resolve<unknown>(""));
-    },
+    applyState,
     calculateState,
     loadState: async (notebookPageId) =>
       window.logseq.App.getCurrentGraph().then((graph) =>
@@ -752,20 +935,6 @@ const setupSharePageWithNotebook = () => {
       },
     },
   });
-  onAppEvent("share-page", (evt) => {
-    const app = apps[evt.source.app]?.name;
-    const args = {
-      workspace: evt.source.workspace,
-      app: `${evt.source.app}`,
-      pageUuid: evt.pageUuid,
-    };
-    notify({
-      title: "Share Page",
-      description: `Notebook ${app}/${evt.source.workspace} is attempting to share page ${evt.notebookPageId}. Would you like to accept?`,
-      buttons: ["accept", "reject"],
-      data: args,
-    });
-  });
 
   const renderStatusUnderHeading = async (
     isTargeted: (uid: string) => boolean,
@@ -883,15 +1052,6 @@ const setupSharePageWithNotebook = () => {
               doc.annotations.forEach((a) => oldDoc.annotations.push(a));
             },
           });
-          // if (e.key === "Enter") {
-          //   // createBlock
-          // } else if (e.key === "Backspace") {
-          //   // check for deleteBlock, other wise update block
-          // } else if (e.key === "Tab") {
-          //   // moveBlock
-          // } else {
-          //   // updateBlock
-          // }
         }, 1000);
       }
     }

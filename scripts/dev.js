@@ -1,5 +1,6 @@
 const esbuild = require("esbuild");
 const chokidar = require("chokidar");
+const nearleyCompile = require("./nearley");
 
 let rebuilder;
 chokidar
@@ -23,11 +24,21 @@ chokidar
           rebuilder = r.rebuild;
           console.log(`successfully built ${file}...`);
         });
+    } else if (/\.ne$/.test(file)) {
+      nearleyCompile(file).then(() => {
+        console.log(`successfully compiled ${file}...`);
+      });
     }
   })
   .on("change", (file) => {
     console.log(`File ${file} has been changed`);
-    rebuilder()
-      .then(() => console.log(`Rebuilt main.tsx`))
-      .catch((e) => console.error(`Failed to rebuild`, file, e));
+    if (/\.tsx?$/.test(file) && rebuilder) {
+      rebuilder()
+        .then(() => console.log(`Rebuilt main.tsx`))
+        .catch((e) => console.error(`Failed to rebuild`, file, e));
+    } else if (/\.ne$/.test(file)) {
+      nearleyCompile(file).then(() => {
+        console.log(`successfully compiled ${file}...`);
+      });
+    }
   });
