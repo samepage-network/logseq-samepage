@@ -2,6 +2,7 @@ import type { AppId, Schema } from "@samepage/client/types";
 import loadSharePageWithNotebook from "@samepage/client/protocols/sharePageWithNotebook";
 import SharedPageStatus from "@samepage/client/components/SharedPageStatus";
 import NotificationContainer from "@samepage/client/components/NotificationContainer";
+import atJsonParser from "@samepage/client/utils/atJsonParser";
 import { apps } from "@samepage/client/internal/registry";
 import { BlockEntity, BlockUUIDTuple } from "@logseq/libs/dist/LSPlugin.user";
 import Automerge from "automerge";
@@ -15,8 +16,7 @@ import renderOverlay from "../components/renderOverlay";
 import SharedPagesDashboard from "../components/SharedPagesDashboard";
 import getPageByPropertyId from "../util/getPageByPropertyId";
 import addIdProperty from "../util/addIdProperty";
-import blockLexer from "../util/blockLexer";
-import { Token } from "../util/blockTokens";
+import blockGrammar from "../util/blockGrammar";
 
 type InputTextNode = {
   content: string;
@@ -105,119 +105,6 @@ type InputSchema = {
   annotations: Schema["annotations"];
 };
 
-const reduceTokens = (tokens: Token[]): InputSchema =>
-  tokens
-    .map((token) => {
-      switch (token.type) {
-        case "strikethrough": {
-          const innerState = reduceTokens(token.tokens);
-          return {
-            content: innerState.content,
-            annotations: (
-              [
-                {
-                  type: "strikethrough",
-                  start: 0,
-                  end: innerState.content.length,
-                },
-              ] as Schema["annotations"]
-            ).concat(innerState.annotations),
-          };
-        }
-        case "italics": {
-          const innerState = reduceTokens(token.tokens);
-          return {
-            content: innerState.content,
-            annotations: (
-              [
-                {
-                  type: "italics",
-                  start: 0,
-                  end: innerState.content.length,
-                },
-              ] as Schema["annotations"]
-            ).concat(innerState.annotations),
-          };
-        }
-        case "highlighting": {
-          const innerState = reduceTokens(token.tokens);
-          return {
-            content: innerState.content,
-            annotations: (
-              [
-                {
-                  type: "highlighting",
-                  start: 0,
-                  end: innerState.content.length,
-                },
-              ] as Schema["annotations"]
-            ).concat(innerState.annotations),
-          };
-        }
-        case "link": {
-          const innerState = reduceTokens(token.tokens);
-          return {
-            content: innerState.content,
-            annotations: (
-              [
-                {
-                  type: "link",
-                  start: 0,
-                  end: innerState.content.length,
-                  attributes: {
-                    href: token.href,
-                  },
-                },
-              ] as Schema["annotations"]
-            ).concat(innerState.annotations),
-          };
-        }
-        case "bold": {
-          const innerState = reduceTokens(token.tokens);
-          return {
-            content: innerState.content,
-            annotations: (
-              [
-                {
-                  type: "bold",
-                  start: 0,
-                  end: innerState.content.length,
-                },
-              ] as Schema["annotations"]
-            ).concat(innerState.annotations),
-          };
-        }
-        case "text": {
-          return {
-            content: token.text,
-            annotations: [] as Schema["annotations"],
-          };
-        }
-        default: {
-          return {
-            content: "",
-            annotations: [] as Schema["annotations"],
-          };
-        }
-      }
-    })
-    .reduce(
-      (total, current) => ({
-        content: `${total.content}${current.content}`,
-        annotations: total.annotations.concat(
-          current.annotations.map((a) => ({
-            ...a,
-            start: a.start + total.content.length,
-            end: a.end + total.content.length,
-          }))
-        ),
-      }),
-      {
-        content: "",
-        annotations: [],
-      } as InputSchema
-    );
-
 const toAtJson = async ({
   nodes = [],
   level = 0,
@@ -250,8 +137,9 @@ const toAtJson = async ({
                 ),
                 ""
               );
-            const { content, annotations } = reduceTokens(
-              blockLexer(preContent)
+            const { content, annotations } = atJsonParser(
+              blockGrammar,
+              preContent
             );
             const end = content.length + index;
             const blockAnnotations: Schema["annotations"] = [
@@ -324,14 +212,7 @@ const flattenTree = <
 
 // const PROPERTIES_REGEX = /^()+$/s
 const isContentBlock = (b: BlockEntity) => {
-  const props = (b.propertiesOrder as string[]) || [];
-  return (
-    !b.content ||
-    !!props.reduce(
-      (p, c) => p.replace(new RegExp(`${c}:: [^\\n]+\\n?`), ""),
-      b.content
-    )
-  );
+  return !b.content || b.content.replace(/[a-z]+:: [^\n]+\n?/g, "");
 };
 
 const createHTMLObserver = <T extends HTMLElement>({
@@ -468,7 +349,27 @@ const applyState = async (notebookPageId: string, state: Schema) => {
                       window.logseq.Editor.updateBlock(block.uuid, title)
                   );
                 } else {
-                  return window.logseq.Editor.renamePage(existingTitle, title);
+                  return window.logseq.Editor.getPageBlocksTree(title)
+                    .then((tree) => {
+                      if (tree) {
+                        const blockWithProperty = tree.find(
+                          (b) =>
+                            b.properties?.samepage &&
+                            b.properties?.samepage !== notebookPageId
+                        );
+                        if (blockWithProperty) {
+                          return window.logseq.Editor.upsertBlockProperty(
+                            blockWithProperty?.uuid,
+                            "samepage",
+                            notebookPageId
+                          );
+                        }
+                      }
+                      return Promise.resolve();
+                    })
+                    .then(() =>
+                      window.logseq.Editor.renamePage(existingTitle, title)
+                    );
                 }
               }
             } else {

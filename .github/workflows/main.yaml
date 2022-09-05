@@ -22,7 +22,7 @@ jobs:
       - name: build
         run: node scripts/build.js
       - name: package
-        run: zip -q dist/logseq.zip README.md dist/main.js dist/main.css dist/normalize.css dist/blueprint.css dist/blueprint-icons.css index.html logo.svg package.json
+        run: zip -q dist/logseq.zip README.md dist/index.js dist/index.css dist/normalize.css dist/blueprint.css dist/blueprint-icons.css index.html logo.svg package.json
       - name: deploy
         run: |
           VERSION=$(cat package.json | grep version | cut -d ':' -f 2 | cut -d '"' -f 2)

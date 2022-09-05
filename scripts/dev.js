@@ -6,11 +6,11 @@ let rebuilder;
 chokidar
   .watch(["src"])
   .on("add", (file) => {
-    if (file === "src/main.tsx") {
+    if (file === "src/index.tsx") {
       console.log(`building ${file}...`);
       esbuild
         .build({
-          entryPoints: ["./src/main.tsx"],
+          entryPoints: ["./src/index.tsx"],
           outdir: "dist",
           bundle: true,
           define: {
@@ -34,7 +34,7 @@ chokidar
     console.log(`File ${file} has been changed`);
     if (/\.tsx?$/.test(file) && rebuilder) {
       rebuilder()
-        .then(() => console.log(`Rebuilt main.tsx`))
+        .then(() => console.log(`Rebuilt index.tsx`))
         .catch((e) => console.error(`Failed to rebuild`, file, e));
     } else if (/\.ne$/.test(file)) {
       nearleyCompile(file).then(() => {

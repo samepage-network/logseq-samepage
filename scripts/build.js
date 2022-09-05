@@ -12,7 +12,7 @@ const files = [
 nearleyCompile("./src/util/blockGrammar")
   .then(() =>
     esbuild.build({
-      entryPoints: ["./src/main.tsx"],
+      entryPoints: ["./src/index.tsx"],
       outdir: "dist",
       bundle: true,
       define: {

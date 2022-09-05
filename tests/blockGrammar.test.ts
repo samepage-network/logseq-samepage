@@ -1,126 +1,90 @@
-import blockLexer from "../src/util/blockLexer";
-import { Token } from "../src/util/blockTokens";
+import blockGrammar from "../src/util/blockGrammar";
+import type { InitialSchema } from "@samepage/client/types";
+import atJsonParser from "@samepage/client/utils/atJsonParser";
 
-const runTest = (md: string, expected: Token[]) => () => {
-  const output = blockLexer(md);
+const runTest = (md: string, expected: InitialSchema) => () => {
+  const output = atJsonParser(blockGrammar, md);
   expect(output).toBeTruthy();
-  expected.forEach((e, i) => {
-    expect(output[i]).toEqual(e);
+  expect(output.content).toEqual(expected.content);
+  expected.annotations.forEach((e, i) => {
+    expect(output.annotations[i]).toEqual(e);
   });
-  expect(output[expected.length]).toBeUndefined();
-  expect(expected[output.length]).toBeUndefined();
+  expect(output.annotations[expected.annotations.length]).toBeUndefined();
+  expect(expected.annotations[output.annotations.length]).toBeUndefined();
 };
 
 test(
   "Highlighted Text",
-  runTest("A ^^highlighted^^ text", [
-    { type: "text", raw: "A ", text: "A " },
-    {
-      type: "highlighting",
-      raw: "^^highlighted^^",
-      tokens: [{ type: "text", raw: "highlighted", text: "highlighted" }],
-    },
-    { type: "text", raw: " text", text: " text" },
-  ])
+  runTest("A ^^highlighted^^ text", {
+    content: "A highlighted text",
+    annotations: [{ type: "highlighting", start: 2, end: 13 }],
+  })
 );
 
 test(
   "Strikethrough Text",
-  runTest("A ~~strikethrough~~ text", [
-    { type: "text", raw: "A ", text: "A " },
-    {
-      type: "strikethrough",
-      raw: "~~strikethrough~~",
-      tokens: [{ type: "text", raw: "strikethrough", text: "strikethrough" }],
-    },
-    { type: "text", raw: " text", text: " text" },
-  ])
+  runTest("A ~~strikethrough~~ text", {
+    content: "A strikethrough text",
+    annotations: [{ type: "strikethrough", start: 2, end: 15 }],
+  })
 );
 
 test(
   "Italics text (underscore)",
-  runTest("A _italics_ text", [
-    { type: "text", raw: "A ", text: "A " },
-    {
-      type: "italics",
-      raw: "_italics_",
-      tokens: [{ type: "text", raw: "italics", text: "italics" }],
-    },
-    { type: "text", raw: " text", text: " text" },
-  ])
+  runTest("A _italics_ text", {
+    content: "A italics text",
+    annotations: [{ type: "italics", start: 2, end: 9 }],
+  })
 );
 
 test(
   "Italics text (asterisk)",
-  runTest("A *italics* text", [
-    { type: "text", raw: "A ", text: "A " },
-    {
-      type: "italics",
-      raw: "*italics*",
-      tokens: [{ type: "text", raw: "italics", text: "italics" }],
-    },
-    { type: "text", raw: " text", text: " text" },
-  ])
+  runTest("A *italics* text", {
+    content: "A italics text",
+    annotations: [{ type: "italics", start: 2, end: 9 }],
+  })
 );
 
 test(
   "Bold text (underscore)",
-  runTest("A __bold__ text", [
-    { type: "text", raw: "A ", text: "A " },
-    {
-      type: "bold",
-      raw: "__bold__",
-      tokens: [{ type: "text", raw: "bold", text: "bold" }],
-    },
-    { type: "text", raw: " text", text: " text" },
-  ])
+  runTest("A __bold__ text", {
+    content: "A bold text",
+    annotations: [{ type: "bold", start: 2, end: 6 }],
+  })
 );
 
 test(
   "Bold text (asterisk)",
-  runTest("A **bold** text", [
-    { type: "text", raw: "A ", text: "A " },
-    {
-      type: "bold",
-      raw: "**bold**",
-      tokens: [{ type: "text", raw: "bold", text: "bold" }],
-    },
-    { type: "text", raw: " text", text: " text" },
-  ])
+  runTest("A **bold** text", {
+    content: "A bold text",
+    annotations: [{ type: "bold", start: 2, end: 6 }],
+  })
 );
 
 test(
   "Support single characters as text",
-  runTest("A *, some ^, one ~, and going down _.", [
-    {
-      type: "text",
-      raw: "A *, some ^, one ~, and going down _.",
-      text: "A *, some ^, one ~, and going down _.",
-    },
-  ])
+  runTest("A *, some ^, one ~, and going down _.", {
+    content: "A *, some ^, one ~, and going down _.",
+    annotations: [],
+  })
 );
 
 test(
   "External links",
-  runTest("A [linked](https://samepage.network) text", [
-    { type: "text", raw: "A ", text: "A " },
-    {
-      type: "link",
-      raw: "[linked](https://samepage.network)",
-      tokens: [
-        {
-          type: "text",
-          raw: "linked",
-          text: "linked",
-        },
-      ],
-      href: "https://samepage.network",
-    },
-    { type: "text", raw: " text", text: " text" },
-  ])
+  runTest("A [linked](https://samepage.network) text", {
+    content: "A linked text",
+    annotations: [
+      {
+        type: "link",
+        start: 2,
+        end: 8,
+        attributes: { href: "https://samepage.network" },
+      },
+    ],
+  })
 );
 
-// The rest of these are tests from roamjs-components marked compiler. should use to test this grammar 
+// The rest of these are tests from roamjs-components marked compiler. should use to test this grammar
 //
 // test(
 //   "Runs Todos",

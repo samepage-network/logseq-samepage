@@ -9,7 +9,9 @@ const addIdProperty = (page: PageEntity | null) =>
     : Promise.resolve({ tree: [], uuid: "" })
   ).then(({ tree, uuid }) =>
     (tree.length
-      ? Promise.resolve(tree[0].uuid)
+      ? tree[0].content
+        ? window.logseq.Editor.prependBlockInPage(uuid, "").then((b) => b?.uuid)
+        : Promise.resolve(tree[0].uuid)
       : window.logseq.Editor.appendBlockInPage(uuid, ``).then((b) => b?.uuid)
     )
       .then((blockUuid) =>

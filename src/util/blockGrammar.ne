@@ -4,7 +4,7 @@
 
 @{%
 import { 
-   lexer, 
+   compileLexer, 
    createBoldToken,
    createHighlightingToken,
    createItalicsToken,
@@ -12,7 +12,9 @@ import {
    createStrikethroughToken,
    createTextToken,
    disambiguateTokens,
-} from "./blockTokens";
+} from "@samepage/client/utils/atJsonTokens";
+
+const lexer = compileLexer({});
 %}
 
 @lexer lexer
