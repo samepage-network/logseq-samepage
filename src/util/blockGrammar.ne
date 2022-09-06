@@ -12,7 +12,7 @@ import {
    createStrikethroughToken,
    createTextToken,
    disambiguateTokens,
-} from "@samepage/client/utils/atJsonTokens";
+} from "samepage/utils/atJsonTokens";
 
 const lexer = compileLexer({});
 %}

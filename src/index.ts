@@ -1,67 +1,26 @@
 import "@logseq/libs";
-import "./index.css";
-import setupSamePageClient from "@samepage/client/protocols/setupSamePageClient";
-import { onAppEvent } from "@samepage/client/internal/registerAppEventListener";
-import UsageChart from "./components/UsageChart";
+import setupSamePageClient from "samepage/protocols/setupSamePageClient";
+import UsageChart from "samepage/components/UsageChart";
+import defaultSettings from "samepage/utils/defaultSettings";
+import { onAppEvent } from "samepage/internal/registerAppEventListener";
 import { renderLoading } from "./components/Loading";
 import setupSharePageWithNotebook from "./protocols/sharePageWithNotebook";
 import renderOverlay from "./components/renderOverlay";
+import type { SettingSchemaDesc } from "@logseq/libs/dist/LSPlugin";
 
 const main = async () => {
-  logseq.useSettingsSchema([
-    {
-      key: "auto-connect",
-      type: "boolean",
-      title: "Auto Connect",
-      description: "Automatically connect to the SamePage Network",
-      default: false,
-    },
-  ]);
-
-  const workspace = await logseq.App.getCurrentGraph().then(
-    (info) => info?.name || ""
-  );
-
-  // logseq commands arent idempotent -.-
-  const commandsRegistered = new Set<string>();
-  let removeLoadingCallback: (() => void) | undefined;
-  const { unload: unloadSamePageClient } = setupSamePageClient({
-    isAutoConnect: logseq.settings?.["auto-connect"] as boolean,
-    app: 2,
-    workspace,
-    addCommand: ({ label, callback }) => {
-      const key = label.replace(/ /g, "-").toLowerCase();
-      if (!commandsRegistered.has(key)) {
-        logseq.App.registerCommandPalette({ label, key }, callback);
-        commandsRegistered.add(key);
-      }
-    },
-    removeCommand: ({ label }) => {
-      const key = label.replace(/ /g, "-").toLowerCase();
-      if (commandsRegistered.has(key)) {
-        logseq.App.unregister_plugin_simple_command(
-          `${logseq.baseInfo.id}/${key}`
-        );
-        commandsRegistered.delete(key);
-      }
-    },
-  });
-  onAppEvent("log", (evt) =>
-    window.logseq.UI.showMsg(
-      evt.content,
-      evt.intent === "info" ? "success" : evt.intent,
-      { timeout: 5000 }
+  logseq.useSettingsSchema(
+    defaultSettings.map(
+      (s) =>
+        ({
+          key: s.id,
+          type: s.type,
+          title: s.name,
+          description: s.description,
+          default: s.default,
+        } as SettingSchemaDesc)
     )
   );
-  onAppEvent("usage", (evt) =>
-    renderOverlay({ Overlay: UsageChart, props: evt })
-  );
-  onAppEvent("connection", (evt) => {
-    if (evt.status === "PENDING")
-      renderLoading().then((c) => (removeLoadingCallback = c));
-    else removeLoadingCallback?.();
-  });
-  const unloadSharePageWithNotebook = setupSharePageWithNotebook();
 
   logseq.provideStyle(`@import url("https://unpkg.com/normalize.css@^8.0.1");
 @import url("https://unpkg.com/@blueprintjs/core@^4.8.0/lib/css/blueprint.css");
@@ -85,6 +44,51 @@ div.samepage-notification-container {
   bottom: unset;
 }
 `);
+
+  const workspace = await logseq.App.getCurrentGraph().then(
+    (info) => info?.name || ""
+  );
+
+  // logseq commands arent idempotent -.-
+  const commandsRegistered = new Set<string>();
+  const { unload: unloadSamePageClient } = setupSamePageClient({
+    isAutoConnect: logseq.settings?.["auto-connect"] as boolean,
+    app: "LogSeq",
+    workspace,
+    addCommand: ({ label, callback }) => {
+      const key = label.replace(/ /g, "-").toLowerCase();
+      if (!commandsRegistered.has(key)) {
+        logseq.App.registerCommandPalette({ label, key }, callback);
+        commandsRegistered.add(key);
+      }
+    },
+    removeCommand: ({ label }) => {
+      const key = label.replace(/ /g, "-").toLowerCase();
+      if (commandsRegistered.has(key)) {
+        logseq.App.unregister_plugin_simple_command(
+          `${logseq.baseInfo.id}/${key}`
+        );
+        commandsRegistered.delete(key);
+      }
+    },
+    renderOverlay,
+    portalContainer: window.parent.document.body,
+  });
+  onAppEvent("log", (evt) =>
+    window.logseq.UI.showMsg(
+      evt.content,
+      evt.intent === "info" ? "success" : evt.intent,
+      { timeout: 5000 }
+    )
+  );
+  let removeLoadingCallback: (() => void) | undefined;
+  onAppEvent("connection", (evt) => {
+    if (evt.status === "PENDING")
+      renderLoading().then((c) => (removeLoadingCallback = c));
+    else removeLoadingCallback?.();
+  });
+
+  const unloadSharePageWithNotebook = setupSharePageWithNotebook();
 
   logseq.beforeunload(async () => {
     Array.from(

@@ -1,19 +1,14 @@
-import type { AppId, Schema } from "@samepage/client/types";
-import loadSharePageWithNotebook from "@samepage/client/protocols/sharePageWithNotebook";
-import SharedPageStatus from "@samepage/client/components/SharedPageStatus";
-import NotificationContainer from "@samepage/client/components/NotificationContainer";
-import atJsonParser from "@samepage/client/utils/atJsonParser";
-import { apps } from "@samepage/client/internal/registry";
+import type { AppId, Schema } from "samepage/types";
+import loadSharePageWithNotebook from "samepage/protocols/sharePageWithNotebook";
+import atJsonParser from "samepage/utils/atJsonParser";
+import createHTMLObserver from "samepage/utils/createHTMLObserver";
+import { apps } from "samepage/internal/registry";
 import { BlockEntity, BlockUUIDTuple } from "@logseq/libs/dist/LSPlugin.user";
 import Automerge from "automerge";
 import { openDB, IDBPDatabase } from "idb";
 import { v4 } from "uuid";
-import React from "react";
-import { createRoot } from "react-dom/client";
 import dateFormat from "date-fns/format";
 
-import renderOverlay from "../components/renderOverlay";
-import SharedPagesDashboard from "../components/SharedPagesDashboard";
 import getPageByPropertyId from "../util/getPageByPropertyId";
 import addIdProperty from "../util/addIdProperty";
 import blockGrammar from "../util/blockGrammar";
@@ -213,38 +208,6 @@ const flattenTree = <
 // const PROPERTIES_REGEX = /^()+$/s
 const isContentBlock = (b: BlockEntity) => {
   return !b.content || b.content.replace(/[a-z]+:: [^\n]+\n?/g, "");
-};
-
-const createHTMLObserver = <T extends HTMLElement>({
-  callback,
-  tag,
-  className,
-}: {
-  callback: (el: T) => void;
-  tag: string;
-  className: string;
-}) => {
-  const getChildren = (d: Node) =>
-    Array.from((d as HTMLElement).getElementsByClassName(className)).filter(
-      (d) => d.nodeName === tag
-    ) as T[];
-  const isNode = (d: Node): d is T =>
-    d.nodeName === tag &&
-    Array.from((d as HTMLElement).classList).includes(className);
-  const getNodes = (nodes: NodeList) =>
-    Array.from(nodes)
-      .filter((d: Node) => isNode(d) || d.hasChildNodes())
-      .flatMap((d) => (isNode(d) ? [d] : getChildren(d)));
-
-  getChildren(window.parent.document.body).forEach(callback);
-  const observer = new MutationObserver((records) => {
-    records.flatMap((m) => getNodes(m.addedNodes)).forEach(callback);
-  });
-  observer.observe(window.parent.document.body, {
-    childList: true,
-    subtree: true,
-  });
-  return observer;
 };
 
 const calculateState = async (notebookPageId: string) => {
@@ -622,286 +585,260 @@ const applyState = async (notebookPageId: string, state: Schema) => {
   return promises.reduce((p, c) => p.then(c), Promise.resolve<unknown>(""));
 };
 
-const setupSharePageWithNotebook = () => {
-  const {
-    unload,
-    updatePage,
-    disconnectPage,
-    joinPage,
-    rejectPage,
-    forcePushPage,
-    listConnectedNotebooks,
-    getLocalHistory,
-    isShared,
-  } = loadSharePageWithNotebook({
-    renderViewPages: (props) =>
-      renderOverlay({ Overlay: SharedPagesDashboard, props }),
-    renderSharedPageStatus: ({ notebookPageId, created }) => {
-      Array.from(
-        window.parent.document.querySelectorAll<HTMLHeadingElement>("h1.title")
-      ).forEach((header) => {
-        renderStatusUnderHeading((u) => u === notebookPageId, header, created);
-      });
-    },
+const getLocalPageTitle = (uuid: string) =>
+  getPageByPropertyId(uuid).then((p) =>
+    p
+      ? p.originalName
+      : logseq.Editor.getBlock(uuid).then((block) => block?.content || "")
+  );
 
-    getCurrentNotebookPageId: () =>
-      logseq.Editor.getCurrentPage().then((p) =>
-        p && !("page" in p) ? addIdProperty(p).then(() => p.uuid) : ""
-      ),
-    applyState,
-    calculateState,
-    loadState: async (notebookPageId) =>
-      window.logseq.App.getCurrentGraph().then((graph) =>
-        openIdb().then((db) =>
-          db.get("pages", `${graph?.name || "null"}/${notebookPageId}`)
-        )
-      ),
-    saveState: async (notebookPageId, state) =>
-      window.logseq.App.getCurrentGraph().then((graph) =>
-        openIdb().then((db) =>
-          db.put("pages", state, `${graph?.name || "null"}/${notebookPageId}`)
-        )
-      ),
-    removeState: async (notebookPageId) =>
-      window.logseq.App.getCurrentGraph().then((graph) =>
-        openIdb().then((db) =>
-          db.delete("pages", `${graph?.name || "null"}/${notebookPageId}`)
-        )
-      ),
-  });
-  renderOverlay({
-    Overlay: NotificationContainer,
-    props: {
-      actions: {
-        accept: ({ app, workspace, pageUuid }) =>
-          // TODO support block or page tree as a user action
-          window.logseq.Editor.createPage(
-            `samepage/page/${pageUuid}`,
-            {},
-            { redirect: false }
-          ).then((page) =>
-            addIdProperty(page)
-              .then((notebookPageId) =>
-                joinPage({
-                  pageUuid,
-                  notebookPageId,
-                  source: { app: Number(app) as AppId, workspace },
-                }).then(() => getPageByPropertyId(notebookPageId))
+const setupSharePageWithNotebook = () => {
+  const { unload, updatePage, joinPage, rejectPage, isShared } =
+    loadSharePageWithNotebook({
+      getCurrentNotebookPageId: () =>
+        logseq.Editor.getCurrentPage().then((p) =>
+          p && !("page" in p) ? addIdProperty(p).then(() => p.uuid) : ""
+        ),
+      applyState,
+      calculateState,
+      loadState: async (notebookPageId) =>
+        window.logseq.App.getCurrentGraph().then((graph) =>
+          openIdb().then((db) =>
+            db.get("pages", `${graph?.name || "null"}/${notebookPageId}`)
+          )
+        ),
+      saveState: async (notebookPageId, state) =>
+        window.logseq.App.getCurrentGraph().then((graph) =>
+          openIdb().then((db) =>
+            db.put("pages", state, `${graph?.name || "null"}/${notebookPageId}`)
+          )
+        ),
+      removeState: async (notebookPageId) =>
+        window.logseq.App.getCurrentGraph().then((graph) =>
+          openIdb().then((db) =>
+            db.delete("pages", `${graph?.name || "null"}/${notebookPageId}`)
+          )
+        ),
+      overlayProps: {
+        viewSharedPageProps: {
+          linkNewPage: (_, title) =>
+            window.logseq.Editor.getPage(title)
+              .then(
+                (page) =>
+                  page ||
+                  window.logseq.Editor.createPage(
+                    title,
+                    {},
+                    { redirect: false }
+                  )
               )
-              .then((title) => {
-                const todayName = dateFormat(new Date(), "MMM do, yyyy");
-                return window.logseq.Editor.appendBlockInPage(
-                  todayName,
-                  `Accepted page [[${title?.originalName}]] from ${
-                    apps[Number(app)].name
-                  } / ${workspace}`
-                );
-              })
-              .then(() => Promise.resolve())
-              .catch((e) => {
-                window.logseq.Editor.deletePage(`samepage/page/${pageUuid}`);
-                console.error(e);
-                return Promise.reject(e);
-              })
-          ),
-        reject: async ({ workspace, app, pageUuid }) =>
-          rejectPage({
-            source: { app: Number(app) as AppId, workspace },
-            pageUuid,
-          }),
-      },
-      api: {
-        deleteNotification: (uuid) =>
-          window.logseq.Editor.deletePage(`samepage/notifications/${uuid}`),
-        addNotification: (not) =>
-          window.logseq.Editor.createPage(
-            `samepage/notifications/${not.uuid}`,
-            {},
-            { redirect: false, createFirstBlock: false }
-          ).then(
-            (newPage) =>
-              newPage &&
-              Promise.all([
-                window.logseq.Editor.appendBlockInPage(
-                  newPage.uuid,
-                  "Title"
-                ).then(
-                  (block) =>
-                    block &&
+              .then((page) => page?.uuid || ""),
+          getLocalPageTitle,
+          onLinkClick: (uuid, e) => {
+            getLocalPageTitle(uuid).then((title) => {
+              if (e.shiftKey) {
+                logseq.Editor.openInRightSidebar(uuid);
+              } else {
+                window.location.hash = `#/page/${encodeURIComponent(
+                  title.toLowerCase()
+                )}`;
+              }
+            });
+          },
+        },
+        notificationContainerProps: {
+          actions: {
+            accept: ({ app, workspace, pageUuid }) =>
+              // TODO support block or page tree as a user action
+              window.logseq.Editor.createPage(
+                `samepage/page/${pageUuid}`,
+                {},
+                { redirect: false }
+              ).then((page) =>
+                addIdProperty(page)
+                  .then((notebookPageId) =>
+                    joinPage({
+                      pageUuid,
+                      notebookPageId,
+                      source: { app: Number(app) as AppId, workspace },
+                    }).then(() => getPageByPropertyId(notebookPageId))
+                  )
+                  .then((title) => {
+                    const todayName = dateFormat(new Date(), "MMM do, yyyy");
+                    return window.logseq.Editor.appendBlockInPage(
+                      todayName,
+                      `Accepted page [[${title?.originalName}]] from ${
+                        apps[Number(app)].name
+                      } / ${workspace}`
+                    );
+                  })
+                  .then(() => Promise.resolve())
+                  .catch((e) => {
+                    window.logseq.Editor.deletePage(
+                      `samepage/page/${pageUuid}`
+                    );
+                    console.error(e);
+                    return Promise.reject(e);
+                  })
+              ),
+            reject: async ({ workspace, app, pageUuid }) =>
+              rejectPage({
+                source: { app: Number(app) as AppId, workspace },
+                pageUuid,
+              }),
+          },
+          api: {
+            deleteNotification: (uuid) =>
+              window.logseq.Editor.deletePage(`samepage/notifications/${uuid}`),
+            addNotification: (not) =>
+              window.logseq.Editor.createPage(
+                `samepage/notifications/${not.uuid}`,
+                {},
+                { redirect: false, createFirstBlock: false }
+              ).then(
+                (newPage) =>
+                  newPage &&
+                  Promise.all([
                     window.logseq.Editor.appendBlockInPage(
-                      block.uuid,
-                      not.title
-                    )
-                ),
-                window.logseq.Editor.appendBlockInPage(
-                  newPage.uuid,
-                  "Description"
-                ).then(
-                  (block) =>
-                    block &&
-                    window.logseq.Editor.appendBlockInPage(
-                      block.uuid,
-                      not.description
-                    )
-                ),
-                window.logseq.Editor.appendBlockInPage(
-                  newPage.uuid,
-                  "Buttons"
-                ).then(
-                  (block) =>
-                    block &&
-                    Promise.all(
-                      not.buttons.map((a) =>
-                        window.logseq.Editor.appendBlockInPage(block.uuid, a)
-                      )
-                    )
-                ),
-                window.logseq.Editor.appendBlockInPage(
-                  newPage.uuid,
-                  "Data"
-                ).then(
-                  (block) =>
-                    block &&
-                    Promise.all(
-                      Object.entries(not.data).map((arg) =>
+                      newPage.uuid,
+                      "Title"
+                    ).then(
+                      (block) =>
+                        block &&
                         window.logseq.Editor.appendBlockInPage(
                           block.uuid,
-                          arg[0]
-                        ).then(
-                          (block) =>
-                            block &&
+                          not.title
+                        )
+                    ),
+                    window.logseq.Editor.appendBlockInPage(
+                      newPage.uuid,
+                      "Description"
+                    ).then(
+                      (block) =>
+                        block &&
+                        window.logseq.Editor.appendBlockInPage(
+                          block.uuid,
+                          not.description
+                        )
+                    ),
+                    window.logseq.Editor.appendBlockInPage(
+                      newPage.uuid,
+                      "Buttons"
+                    ).then(
+                      (block) =>
+                        block &&
+                        Promise.all(
+                          not.buttons.map((a) =>
                             window.logseq.Editor.appendBlockInPage(
                               block.uuid,
-                              arg[1]
+                              a
                             )
+                          )
                         )
-                      )
-                    )
-                ),
-              ])
-          ),
-        getNotifications: () =>
-          window.logseq.DB.datascriptQuery(
-            `[:find (pull ?b [:block/name]) :where [?b :block/name ?title] [(clojure.string/starts-with? ?title  "samepage/notifications/")]]`
-          )
-            .then((pages: [{ name: string }][]) => {
-              return Promise.all(
-                pages.map((block) =>
-                  window.logseq.Editor.getPageBlocksTree(block[0].name).then(
-                    (tree) => ({
-                      tree,
-                      uuid: block[0].name.replace(
-                        /^samepage\/notifications\//,
-                        ""
-                      ),
-                    })
-                  )
-                )
-              );
-            })
-            .then((trees) =>
-              trees.map(({ tree, uuid }) => {
-                return {
-                  title: getSettingValueFromTree({
-                    tree,
-                    key: "Title",
-                  }),
-                  uuid,
-                  description: getSettingValueFromTree({
-                    tree,
-                    key: "Description",
-                  }),
-                  buttons: (
-                    getSubTree({
-                      tree,
-                      key: "Buttons",
-                    }).children || []
-                  ).map((act) => (act as BlockEntity).content),
-                  data: Object.fromEntries(
-                    (
-                      getSubTree({
+                    ),
+                    window.logseq.Editor.appendBlockInPage(
+                      newPage.uuid,
+                      "Data"
+                    ).then(
+                      (block) =>
+                        block &&
+                        Promise.all(
+                          Object.entries(not.data).map((arg) =>
+                            window.logseq.Editor.appendBlockInPage(
+                              block.uuid,
+                              arg[0]
+                            ).then(
+                              (block) =>
+                                block &&
+                                window.logseq.Editor.appendBlockInPage(
+                                  block.uuid,
+                                  arg[1]
+                                )
+                            )
+                          )
+                        )
+                    ),
+                  ])
+              ),
+            getNotifications: () =>
+              window.logseq.DB.datascriptQuery(
+                `[:find (pull ?b [:block/name]) :where [?b :block/name ?title] [(clojure.string/starts-with? ?title  "samepage/notifications/")]]`
+              )
+                .then((pages: [{ name: string }][]) => {
+                  return Promise.all(
+                    pages.map((block) =>
+                      window.logseq.Editor.getPageBlocksTree(
+                        block[0].name
+                      ).then((tree) => ({
                         tree,
-                        key: "Data",
-                      }).children || []
-                    ).map((act) => [
-                      (act as BlockEntity).content,
-                      ((act as BlockEntity).children || []).map(
-                        (b) => b as BlockEntity
-                      )[0]?.content,
-                    ])
-                  ),
-                };
-              })
-            ),
+                        uuid: block[0].name.replace(
+                          /^samepage\/notifications\//,
+                          ""
+                        ),
+                      }))
+                    )
+                  );
+                })
+                .then((trees) =>
+                  trees.map(({ tree, uuid }) => {
+                    return {
+                      title: getSettingValueFromTree({
+                        tree,
+                        key: "Title",
+                      }),
+                      uuid,
+                      description: getSettingValueFromTree({
+                        tree,
+                        key: "Description",
+                      }),
+                      buttons: (
+                        getSubTree({
+                          tree,
+                          key: "Buttons",
+                        }).children || []
+                      ).map((act) => (act as BlockEntity).content),
+                      data: Object.fromEntries(
+                        (
+                          getSubTree({
+                            tree,
+                            key: "Data",
+                          }).children || []
+                        ).map((act) => [
+                          (act as BlockEntity).content,
+                          ((act as BlockEntity).children || []).map(
+                            (b) => b as BlockEntity
+                          )[0]?.content,
+                        ])
+                      ),
+                    };
+                  })
+                ),
+          },
+        },
+        sharedPageStatusProps: {
+          getHtmlElement: async (uuid) => {
+            const page = await getPageByPropertyId(uuid);
+            return Array.from(
+              window.parent.document.querySelectorAll<HTMLHeadingElement>(
+                "h1.title"
+              )
+            ).find((h) => h.textContent === page?.name);
+          },
+          selector: "h1.title",
+          getNotebookPageId: (h) => {
+            const title = h.textContent || "";
+            return window.logseq.DB.datascriptQuery(
+              `[:find ?id :where [?p :block/name "${title.toLowerCase()}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
+            ).then((b) => b[0]?.[0] as string);
+          },
+          getPath: (heading) =>
+            heading?.parentElement?.parentElement?.parentElement || null,
+        },
       },
-    },
-  });
+    });
 
-  const renderStatusUnderHeading = async (
-    isTargeted: (uid: string) => boolean,
-    h: HTMLHeadingElement,
-    created?: boolean
-  ) => {
-    const title = h.textContent || "";
-    const notebookPageId = await window.logseq.DB.datascriptQuery(
-      `[:find ?id :where [?p :block/name "${title.toLowerCase()}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
-    ).then((b) => b[0]?.[0] as string);
-    if (!notebookPageId) return;
-    if (!isTargeted(notebookPageId)) return;
-    const attribute = `data-logseq-shared-${notebookPageId}`;
-    const containerParent = h.parentElement?.parentElement;
-    if (
-      containerParent &&
-      !containerParent.hasAttribute(attribute) &&
-      isShared(notebookPageId)
-    ) {
-      containerParent.setAttribute(attribute, "true");
-      const id = v4();
-      window.logseq.provideUI({
-        path: `div[data-logseq-shared-${notebookPageId}=true]`,
-        key: `status-${notebookPageId}`,
-        template: `<div id="${id}"></div>`,
-      });
-      setTimeout(() => {
-        const parent = window.parent.document.getElementById(id);
-        if (parent) {
-          const root = createRoot(parent);
-          const unmount = () => {
-            unmountCallbacks.delete(unmount);
-            root.unmount();
-            const { parentElement } = parent;
-            if (parentElement)
-              parentElement.removeAttribute(
-                `data-samepage-shared-${notebookPageId}`
-              );
-            parent.remove();
-          };
-          root.render(
-            React.createElement(SharedPageStatus, {
-              notebookPageId,
-              disconnectPage: (id) => disconnectPage(id).then(unmount),
-              forcePushPage,
-              listConnectedNotebooks,
-              getLocalHistory,
-              portalContainer: window.parent.document.body,
-              defaultOpenInviteDialog: created,
-            })
-          );
-          unmountCallbacks.add(unmount);
-        }
-      });
-    }
-  };
-
-  const titleObserver = createHTMLObserver({
-    tag: "H1",
-    className: "title",
-    callback: (h: HTMLHeadingElement) =>
-      renderStatusUnderHeading(() => true, h),
-  });
   const idObserver = createHTMLObserver({
-    tag: "A",
-    className: "page-property-key",
+    selector: "a.page-property-key",
     callback: (a: HTMLAnchorElement) => {
       const dataRef = a.getAttribute("data-ref");
       if (dataRef === "samepage") {
@@ -963,7 +900,6 @@ const setupSharePageWithNotebook = () => {
     window.clearTimeout(updateTimeout);
     Array.from(unmountCallbacks).forEach((c) => c());
     window.parent.document.body.removeEventListener("keydown", bodyListener);
-    titleObserver.disconnect();
     idObserver.disconnect();
     unload();
   };

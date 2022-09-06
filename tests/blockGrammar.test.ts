@@ -1,6 +1,6 @@
 import blockGrammar from "../src/util/blockGrammar";
-import type { InitialSchema } from "@samepage/client/types";
-import atJsonParser from "@samepage/client/utils/atJsonParser";
+import type { InitialSchema } from "samepage/types";
+import atJsonParser from "samepage/utils/atJsonParser";
 
 const runTest = (md: string, expected: InitialSchema) => () => {
   const output = atJsonParser(blockGrammar, md);

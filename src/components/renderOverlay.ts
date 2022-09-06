@@ -1,27 +1,43 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { v4 } from "uuid";
+import type { RenderOverlay } from "samepage/types";
 
-export type OverlayProps<T extends Record<string, unknown>> = {
-  onClose: () => void;
-} & T;
+let unmount: () => void;
 
-const renderOverlay = <T extends Record<string, unknown>>({
+const renderOverlay: RenderOverlay = ({
   id = v4(),
   Overlay = (props) => React.createElement("div", props),
-  props = {} as T,
-}: {
-  id?: string;
-  Overlay?: (props: OverlayProps<T>) => React.ReactElement;
-  props?: T;
-} = {}) => {
-  logseq.provideUI({
-    key: id,
-    path: "body",
-    template: `<div id="${id}"></div>`,
-  });
+  props = {},
+  path = "body",
+}) => {
+  if (path) {
+    if (typeof path === "string") {
+      if (
+        !window.parent.document.querySelector(path)?.querySelector(`#${id}`)
+      ) {
+        logseq.provideUI({
+          key: id,
+          path,
+          template: `<div id="${id}"></div>`,
+        });
+      } else {
+        return () => {};
+      }
+    } else {
+      if (!path.querySelector(`#${id}`)) {
+        const renderId = v4();
+        path.setAttribute(`data-render`, renderId);
+        logseq.provideUI({
+          key: id,
+          path: `${path.tagName.toLowerCase()}[data-render=${renderId}]`,
+          template: `<div id="${id}"></div>`,
+        });
+      } else {
+        return () => {};
+      }
+    }
 
-  return new Promise((resolve) =>
     setTimeout(() => {
       const parent = window.parent.document.getElementById(id);
       if (parent) {
@@ -33,15 +49,20 @@ const renderOverlay = <T extends Record<string, unknown>>({
           else parent.remove();
         };
         root.render(
+          // @ts-ignore This should work...
           React.createElement(Overlay, {
             ...props,
             onClose,
+            isOpen: true,
           })
         );
-        resolve(onClose);
+        unmount = onClose;
       }
-    })
-  );
+    });
+  }
+  return () => {
+    unmount?.();
+  };
 };
 
 export default renderOverlay;
