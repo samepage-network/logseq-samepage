@@ -30,7 +30,7 @@ const renderOverlay: RenderOverlay = ({
         path.setAttribute(`data-render`, renderId);
         logseq.provideUI({
           key: id,
-          path: `${path.tagName.toLowerCase()}[data-render=${renderId}]`,
+          path: `${path.tagName.toLowerCase()}[data-render="${renderId}"]`,
           template: `<div id="${id}"></div>`,
         });
       } else {

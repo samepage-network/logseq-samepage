@@ -1,25 +1,18 @@
-import type { AppId, Schema } from "samepage/types";
+import type { AppId, InitialSchema, Schema } from "samepage/types";
 import loadSharePageWithNotebook from "samepage/protocols/sharePageWithNotebook";
 import atJsonParser from "samepage/utils/atJsonParser";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
 import { apps } from "samepage/internal/registry";
-import { BlockEntity, BlockUUIDTuple } from "@logseq/libs/dist/LSPlugin.user";
+import type {
+  BlockEntity,
+  BlockUUIDTuple,
+} from "@logseq/libs/dist/LSPlugin.user";
 import Automerge from "automerge";
 import { openDB, IDBPDatabase } from "idb";
 import { v4 } from "uuid";
 import dateFormat from "date-fns/format";
-
-import getPageByPropertyId from "../util/getPageByPropertyId";
-import addIdProperty from "../util/addIdProperty";
-import blockGrammar from "../util/blockGrammar";
-
-type InputTextNode = {
-  content: string;
-  uuid: string;
-  children: InputTextNode[];
-  viewType: "bullet" | "numbered" | "document";
-};
-const unmountCallbacks = new Set<() => void>();
+//@ts-ignore Fix later, already compiles
+import blockGrammar from "../util/blockGrammar.ne";
 
 const toFlexRegex = (key: string): RegExp =>
   new RegExp(`^\\s*${key.replace(/([()])/g, "\\$1")}\\s*$`, "i");
@@ -64,10 +57,6 @@ const logseqToSamepage = (s: string) =>
   openIdb()
     .then((db) => db.get("logseq-to-samepage", s))
     .then((v) => (v as string) || "");
-const samepageToLogseq = (s: string) =>
-  openIdb()
-    .then((db) => db.get("samepage-to-logseq", s))
-    .then((v) => (v as string) || "");
 const saveIdMap = (logseq: string, samepage: string) =>
   openIdb().then((db) =>
     Promise.all([
@@ -75,15 +64,6 @@ const saveIdMap = (logseq: string, samepage: string) =>
       db.put("samepage-to-logseq", logseq, samepage),
     ])
   );
-const removeIdMap = (logseq: string, samepage: string) =>
-  openIdb().then((db) =>
-    Promise.all([
-      db.delete("logseq-to-samepage", logseq),
-      db.delete("samepage-to-logseq", samepage),
-    ])
-  );
-const removeLogseqUuid = (logseq: string) =>
-  logseqToSamepage(logseq).then((samepage) => removeIdMap(logseq, samepage));
 let db: IDBPDatabase;
 const openIdb = async () =>
   db ||
@@ -95,26 +75,17 @@ const openIdb = async () =>
     },
   }));
 
-type InputSchema = {
-  content: string;
-  annotations: Schema["annotations"];
-};
-
 const toAtJson = async ({
+  notebookPageId,
   nodes = [],
-  level = 0,
-  startIndex = 0,
-  viewType = "bullet",
 }: {
+  notebookPageId: string;
   nodes?: BlockEntity[];
-  level?: number;
-  startIndex?: number;
-  viewType?: InputTextNode["viewType"];
-}): Promise<InputSchema> => {
-  return nodes
+}): Promise<InitialSchema> => {
+  return flattenTree(nodes)
     .map(
-      (n) => (index: number) =>
-        logseqToSamepage(n.uuid)
+      (n, order) => (index: number) =>
+        logseqToSamepage(`${notebookPageId}~${order}`)
           .then(
             (identifier) =>
               identifier ||
@@ -125,13 +96,7 @@ const toAtJson = async ({
           .then(async (identifier) => {
             const preContent = n.content
               .replace(new RegExp(`\\nid:: ${n.uuid}`), "")
-              .replace(new RegExp(`\\ntitle:: [^\\n]+`), "")
-              .replace(
-                new RegExp(
-                  `\\nsamepage:: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
-                ),
-                ""
-              );
+              .replace(new RegExp(`\\ntitle:: [^\\n]+`), "");
             const { content, annotations } = atJsonParser(
               blockGrammar,
               preContent
@@ -143,46 +108,31 @@ const toAtJson = async ({
                 end,
                 attributes: {
                   identifier,
-                  level: level,
-                  viewType: viewType,
+                  level: n.level || 0,
+                  viewType: "bullet",
                 },
                 type: "block",
               },
             ];
-            const {
-              content: childrenContent,
-              annotations: childrenAnnotations,
-            } = await toAtJson({
-              nodes: (n.children || []).filter(
-                (b): b is BlockEntity => !Array.isArray(b)
-              ),
-              level: level + 1,
-              viewType: n.viewType || viewType,
-              startIndex: end,
-            });
             return {
-              content: `${content}${childrenContent}`,
-              annotations: blockAnnotations
-                .concat(
-                  annotations.map((a) => ({
-                    ...a,
-                    start: a.start + index,
-                    end: a.end + index,
-                  }))
-                )
-                .concat(childrenAnnotations),
+              content,
+              annotations: blockAnnotations.concat(
+                annotations.map((a) => ({
+                  ...a,
+                  start: a.start + index,
+                  end: a.end + index,
+                }))
+              ),
             };
           })
     )
     .reduce(
       (p, c) =>
         p.then(({ content: pc, annotations: pa }) =>
-          c(startIndex + pc.length).then(
-            ({ content: cc, annotations: ca }) => ({
-              content: `${pc}${cc}`,
-              annotations: pa.concat(ca),
-            })
-          )
+          c(pc.length).then(({ content: cc, annotations: ca }) => ({
+            content: `${pc}${cc}`,
+            annotations: pa.concat(ca),
+          }))
         ),
       Promise.resolve({
         content: "",
@@ -194,410 +144,190 @@ const toAtJson = async ({
 const flattenTree = <
   T extends { children?: (T | BlockUUIDTuple)[]; uuid?: string }
 >(
-  tree: T[],
-  parentUuid: string
-): (Omit<T, "children"> & { order: number; parentUuid: string })[] =>
-  tree.flatMap(({ children = [], ...t }, order) => [
-    { ...t, order, parentUuid },
-    ...flattenTree(
-      children.filter((c): c is T => typeof c === "object"),
-      t.uuid || ""
-    ),
+  tree: T[]
+): Omit<T, "children">[] =>
+  tree.flatMap(({ children = [], ...t }) => [
+    t,
+    ...flattenTree(children.filter((c): c is T => typeof c === "object")),
   ]);
 
-// const PROPERTIES_REGEX = /^()+$/s
 const isContentBlock = (b: BlockEntity) => {
   return !b.content || b.content.replace(/[a-z]+:: [^\n]+\n?/g, "");
 };
 
 const calculateState = async (notebookPageId: string) => {
-  const page = await getPageByPropertyId(notebookPageId);
   const nodes = (
-    page ? await window.logseq.Editor.getPageBlocksTree(page.originalName) : []
+    await window.logseq.Editor.getPageBlocksTree(notebookPageId)
   ).filter(isContentBlock);
-  const parentUuid = await window.logseq.Editor.getBlock(notebookPageId).then(
-    (b) =>
-      window.logseq.Editor.getBlock(b?.parent.id || 0).then(
-        (parent) =>
-          parent?.uuid ||
-          window.logseq.Editor.getPage(b?.parent.id || 0).then(
-            (p) => p?.uuid || ""
-          )
-      )
-  );
 
-  const title: string = page
-    ? page.originalName
-    : await window.logseq.Editor.getBlock(notebookPageId).then(
-        (block) => block?.content || ""
-      );
-  const startIndex = title.length;
-  const doc = await toAtJson({
+  return toAtJson({
     nodes,
-    viewType: "bullet",
-    startIndex,
+    notebookPageId,
   });
-  return {
-    content: new Automerge.Text(`${title}${doc.content}`),
-    annotations: (
-      [
-        {
-          start: 0,
-          end: startIndex,
-          type: "metadata",
-          attributes: {
-            title,
-            parent: parentUuid,
-          },
-        },
-      ] as Schema["annotations"]
-    ).concat(doc.annotations),
+};
+
+type SamepageNode = {
+  content: string;
+  uuid: string;
+  level: number;
+  annotation: {
+    start: number;
+    end: number;
+    annotations: Schema["annotations"];
   };
 };
 
 const applyState = async (notebookPageId: string, state: Schema) => {
-  const expectedTree: InputTextNode[] = [];
-  const mapping: Record<string, InputTextNode> = {};
-  const contentAnnotations: Record<
-    string,
-    { start: number; end: number; annotations: Schema["annotations"] }
-  > = {};
-  const parents: Record<string, string> = {};
-  let currentBlock: InputTextNode;
-  let initialPromise = () => Promise.resolve<unknown>("");
-  const insertAtLevel = (
-    nodes: InputTextNode[],
-    level: number,
-    parentUuid: string
-  ) => {
-    if (level === 0 || nodes.length === 0) {
-      nodes.push(currentBlock);
-      parents[currentBlock.uuid] = parentUuid;
-    } else {
-      const parentNode = nodes[nodes.length - 1];
-      insertAtLevel(parentNode.children, level - 1, parentNode.uuid);
-    }
-  };
+  const expectedTree: SamepageNode[] = [];
   state.annotations.forEach((anno) => {
     if (anno.type === "block") {
-      currentBlock = {
+      const currentBlock = {
         content: state.content.slice(anno.start, anno.end).join(""),
-        children: [],
         uuid: anno.attributes["identifier"],
-        viewType: "bullet",
+        level: anno.attributes.level,
+        annotation: {
+          start: anno.start,
+          end: anno.end,
+          annotations: [],
+        },
       };
-      mapping[currentBlock.uuid] = currentBlock;
-      contentAnnotations[currentBlock.uuid] = {
-        start: anno.start,
-        end: anno.end,
-        annotations: [],
-      };
-      insertAtLevel(expectedTree, anno.attributes["level"], notebookPageId);
-    } else if (anno.type === "metadata") {
-      const { title, parent } = anno.attributes;
-      initialPromise = () =>
-        (parent
-          ? window.logseq.Editor.getBlock(notebookPageId)
-          : getPageByPropertyId(notebookPageId)
-        )
-          .then(async (node) => {
-            if (node) {
-              const existingTitle =
-                node.originalName || (node as BlockEntity).content;
-              if (existingTitle !== title) {
-                if (parent) {
-                  return window.logseq.Editor.getBlock(notebookPageId).then(
-                    (block) =>
-                      block &&
-                      window.logseq.Editor.updateBlock(block.uuid, title)
-                  );
-                } else {
-                  return window.logseq.Editor.getPageBlocksTree(title)
-                    .then((tree) => {
-                      if (tree) {
-                        const blockWithProperty = tree.find(
-                          (b) =>
-                            b.properties?.samepage &&
-                            b.properties?.samepage !== notebookPageId
-                        );
-                        if (blockWithProperty) {
-                          return window.logseq.Editor.upsertBlockProperty(
-                            blockWithProperty?.uuid,
-                            "samepage",
-                            notebookPageId
-                          );
-                        }
-                      }
-                      return Promise.resolve();
-                    })
-                    .then(() =>
-                      window.logseq.Editor.renamePage(existingTitle, title)
-                    );
-                }
-              }
-            } else {
-              throw new Error(`Missing page with id: ${notebookPageId}`);
-            }
-          })
-          .catch((e) => {
-            return Promise.reject(
-              new Error(`Failed to initialize page metadata: ${e.message}`)
-            );
-          });
+      expectedTree.push(currentBlock);
     } else {
-      const contentAnnotation = Object.values(contentAnnotations).find(
-        (ca) => ca.start <= anno.start && anno.end <= ca.end
+      const block = expectedTree.find(
+        (ca) =>
+          ca.annotation.start <= anno.start && anno.end <= ca.annotation.end
       );
-      if (contentAnnotation) {
-        contentAnnotation.annotations.push(anno);
+      if (block) {
+        block.annotation.annotations.push(anno);
       }
     }
   });
-  Object.entries(contentAnnotations).forEach(
-    ([blockUid, contentAnnotation]) => {
-      const block = mapping[blockUid];
-      const offset = contentAnnotation.start;
-      const normalizedAnnotations = contentAnnotation.annotations.map((a) => ({
-        ...a,
-        start: a.start - offset,
-        end: a.end - offset,
-      }));
-      const annotatedText = normalizedAnnotations.reduce((p, c, index, all) => {
-        const appliedAnnotation =
-          c.type === "bold"
-            ? {
-                prefix: "**",
-                suffix: `**`,
-              }
-            : c.type === "highlighting"
-            ? {
-                prefix: "^^",
-                suffix: `^^`,
-              }
-            : c.type === "italics"
-            ? {
-                prefix: "_",
-                suffix: `_`,
-              }
-            : c.type === "strikethrough"
-            ? {
-                prefix: "~~",
-                suffix: `~~`,
-              }
-            : c.type === "link"
-            ? {
-                prefix: "[",
-                suffix: `](${c.attributes.href})`,
-              }
-            : { prefix: "", suffix: "" };
-        all.slice(index + 1).forEach((a) => {
-          a.start +=
-            (a.start >= c.start ? appliedAnnotation.prefix.length : 0) +
-            (a.start >= c.end ? appliedAnnotation.suffix.length : 0);
-          a.end +=
-            (a.end >= c.start ? appliedAnnotation.prefix.length : 0) +
-            (a.end > c.end ? appliedAnnotation.suffix.length : 0);
-        });
-        return `${p.slice(0, c.start)}${appliedAnnotation.prefix}${p.slice(
-          c.start,
-          c.end
-        )}${appliedAnnotation.suffix}${p.slice(c.end)}`;
-      }, block.content);
-      block.content = annotatedText;
-    }
-  );
-  const expectedTreeMapping = Object.fromEntries(
-    flattenTree(expectedTree, notebookPageId)
-      .filter((n) => !!n.uuid)
-      .map(({ uuid, ...n }) => [uuid, n])
-  );
-  const actualTreeMapping = await getPageByPropertyId(notebookPageId)
-    .then((page) =>
-      page
-        ? window.logseq.Editor.getPageBlocksTree(page.originalName).then(
-            (tree) => tree || []
-          )
-        : []
-    )
-    .then((tree = []) =>
-      Object.fromEntries(
-        flattenTree(tree.filter(isContentBlock), notebookPageId).map(
-          ({ uuid, ...n }) => [uuid, n]
-        )
-      )
-    )
-    .then((a) => a as Record<string, BlockEntity>);
-  const expectedSamepageToLogseq = await Promise.all(
-    Object.keys(expectedTreeMapping).map((k) =>
-      samepageToLogseq(k).then((r) => [k, r] as const)
-    )
-  )
-    .then((keys) => Object.fromEntries(keys))
-    .then((a) => a as Record<string, string>);
+  expectedTree.forEach((block) => {
+    const offset = block.annotation.start;
+    const normalizedAnnotations = block.annotation.annotations.map((a) => ({
+      ...a,
+      start: a.start - offset,
+      end: a.end - offset,
+    }));
+    const annotatedText = normalizedAnnotations.reduce((p, c, index, all) => {
+      const appliedAnnotation =
+        c.type === "bold"
+          ? {
+              prefix: "**",
+              suffix: `**`,
+            }
+          : c.type === "highlighting"
+          ? {
+              prefix: "^^",
+              suffix: `^^`,
+            }
+          : c.type === "italics"
+          ? {
+              prefix: "_",
+              suffix: `_`,
+            }
+          : c.type === "strikethrough"
+          ? {
+              prefix: "~~",
+              suffix: `~~`,
+            }
+          : c.type === "link"
+          ? {
+              prefix: "[",
+              suffix: `](${c.attributes.href})`,
+            }
+          : { prefix: "", suffix: "" };
+      all.slice(index + 1).forEach((a) => {
+        a.start +=
+          (a.start >= c.start ? appliedAnnotation.prefix.length : 0) +
+          (a.start >= c.end ? appliedAnnotation.suffix.length : 0);
+        a.end +=
+          (a.end >= c.start ? appliedAnnotation.prefix.length : 0) +
+          (a.end > c.end ? appliedAnnotation.suffix.length : 0);
+      });
+      return `${p.slice(0, c.start)}${appliedAnnotation.prefix}${p.slice(
+        c.start,
+        c.end
+      )}${appliedAnnotation.suffix}${p.slice(c.end)}`;
+    }, block.content);
+    block.content = annotatedText;
+  });
+  const actualTree = await window.logseq.Editor.getPageBlocksTree(
+    notebookPageId
+  ).then((tree = []) => flattenTree(tree.filter(isContentBlock)));
+  const blockUuidBySamepageUuid: Record<string, string> = {};
 
-  const uuidsToCreate = Object.entries(expectedSamepageToLogseq).filter(
-    ([, k]) => !k || !actualTreeMapping[k]
-  );
-  const expectedUuids = new Set(
-    Object.values(expectedSamepageToLogseq).filter((r) => !!r)
-  );
-  const uuidsToDelete = Object.keys(actualTreeMapping).filter(
-    (k) => !expectedUuids.has(k)
-  );
-  const uuidsToUpdate = Object.entries(expectedSamepageToLogseq).filter(
-    ([, k]) => !!actualTreeMapping[k]
-  );
-  const promises = (
-    [
-      initialPromise,
-      //viewTypePromise
-    ] as (() => Promise<unknown>)[]
-  )
-    .concat(
-      uuidsToDelete.map(
-        (uuid) => () =>
-          window.logseq.Editor.removeBlock(uuid)
-            .then(() => removeLogseqUuid(uuid))
-            .catch((e) => {
-              return Promise.reject(
-                new Error(`Failed to remove block ${uuid}: ${e.message}`)
-              );
-            })
-      )
-    )
-    .concat(
-      uuidsToCreate.map(([samepageUuid]) => async () => {
-        const { parentUuid, order, ...node } =
-          expectedTreeMapping[samepageUuid];
-        return (
-          parentUuid === notebookPageId
-            ? getPageByPropertyId(notebookPageId).then((p) =>
-                !p
-                  ? Promise.reject(
-                      new Error(`Failed to find page ${notebookPageId}`)
-                    )
-                  : window.logseq.Editor.getPageBlocksTree(p.originalName).then(
-                      (tree) =>
-                        // minus 1 because of the persistent id hack -.-
-                        (order < tree.length - 1
-                          ? window.logseq.Editor.insertBlock(
-                              tree[order + 1].uuid,
-                              node.content,
-                              { before: true }
-                            )
-                          : window.logseq.Editor.appendBlockInPage(
-                              p?.originalName,
-                              node.content
-                            )
-                        ).then(
-                          (block) =>
-                            block &&
-                            window.logseq.Editor.upsertBlockProperty(
-                              block.uuid,
-                              "id",
-                              block.uuid
-                            ).then(() => block.uuid)
-                        )
-                    )
-              )
-            : window.logseq.Editor.getBlock(
-                expectedSamepageToLogseq[parentUuid],
-                { includeChildren: true }
-              )
-                .then((block) =>
-                  !block
-                    ? Promise.reject(
-                        new Error(
-                          `Referencing parent ${parentUuid} but none exists`
-                        )
-                      )
-                    : order < (block?.children?.length || 0)
-                    ? window.logseq.Editor.insertBlock(
-                        (block?.children?.[order] as BlockEntity).uuid,
-                        node.content
-                      )
-                    : window.logseq.Editor.appendBlockInPage(
-                        expectedSamepageToLogseq[parentUuid],
-                        node.content
-                      )
-                )
-                .then(
-                  (block) =>
-                    block &&
-                    window.logseq.Editor.upsertBlockProperty(
-                      block.uuid,
-                      "id",
-                      block.uuid
-                    ).then(() => block.uuid)
-                )
+  const promises = expectedTree
+    .map((expectedNode, order, all) => () => {
+      if (actualTree.length > order) {
+        const actualNode = actualTree[order] as BlockEntity;
+        const blockUuid = actualNode.uuid;
+        blockUuidBySamepageUuid[expectedNode.uuid] = blockUuid;
+        return window.logseq.Editor.updateBlock(blockUuid, expectedNode.content)
+          .catch((e) => Promise.reject(`Failed to update block: ${e.message}`))
+          .then(() => {
+            if ((actualNode.level || 0) !== expectedNode.level) {
+              const parent =
+                expectedNode.level === 1
+                  ? notebookPageId
+                  : blockUuidBySamepageUuid[
+                      all
+                        .slice(0, order)
+                        .reverse()
+                        .find((node) => node.level < expectedNode.level)
+                        ?.uuid || ""
+                    ];
+              if (parent)
+                return window.logseq.Editor.moveBlock(actualNode.uuid, parent, {
+                  children: true,
+                })
+                  .then(() => Promise.resolve())
+                  .catch((e) =>
+                    Promise.reject(`Failed to move block: ${e.message}`)
+                  );
+            }
+            return Promise.resolve();
+          });
+      } else {
+        const parent =
+          expectedNode.level === 1
+            ? notebookPageId
+            : blockUuidBySamepageUuid[
+                all
+                  .slice(0, order)
+                  .reverse()
+                  .find((node) => node.level < expectedNode.level)?.uuid || ""
+              ];
+        return window.logseq.Editor.appendBlockInPage(
+          parent,
+          expectedNode.content
         )
-          .then((uuid) =>
-            uuid
-              ? saveIdMap(uuid, samepageUuid).then(
-                  () => (expectedSamepageToLogseq[samepageUuid] = uuid)
-                )
-              : Promise.reject(new Error(`null block uuid created`))
-          )
-          .catch((e) => {
-            return Promise.reject(
-              new Error(`Failed to insert block ${samepageUuid}: ${e.message}`)
-            );
-          });
-      })
-    )
+          .then((block) => {
+            blockUuidBySamepageUuid[expectedNode.uuid] = block?.uuid || "";
+          })
+          .catch((e) => Promise.reject(`Failed to append block: ${e.message}`));
+      }
+    })
     .concat(
-      uuidsToUpdate.map(([samepageUuid, logseqUuid]) => () => {
-        const {
-          parentUuid: samepageParentUuid,
-          order,
-          ...node
-        } = expectedTreeMapping[samepageUuid];
-        const parentUuid =
-          samepageParentUuid === notebookPageId
-            ? samepageParentUuid
-            : expectedSamepageToLogseq[samepageParentUuid];
-        const actual = actualTreeMapping[logseqUuid];
-        // it's possible we may need to await from above and repull
-        if (actual.parentUuid !== parentUuid || actual.order !== order) {
-          return window.logseq.Editor.moveBlock(
-            logseqUuid,
-            parentUuid
-            // use order to determine `before` or `children`
-          ).catch((e) => {
-            return Promise.reject(
-              new Error(`Failed to move block ${samepageUuid}: ${e.message}`)
-            );
-          });
-        } else if (actual.content !== node.content) {
-          return window.logseq.Editor.updateBlock(
-            logseqUuid,
-            node.content
-          ).catch((e) => {
-            return Promise.reject(
-              new Error(`Failed to update block ${samepageUuid}: ${e.message}`)
-            );
-          });
-        } else {
-          return Promise.resolve("");
-        }
-      })
+      actualTree
+        .slice(expectedTree.length)
+        .map(
+          (a) => () =>
+            window.logseq.Editor.removeBlock(a.uuid).catch((e) =>
+              Promise.reject(`Failed to remove block: ${e.message}`)
+            )
+        )
     );
+
   return promises.reduce((p, c) => p.then(c), Promise.resolve<unknown>(""));
 };
-
-const getLocalPageTitle = (uuid: string) =>
-  getPageByPropertyId(uuid).then((p) =>
-    p
-      ? p.originalName
-      : logseq.Editor.getBlock(uuid).then((block) => block?.content || "")
-  );
 
 const setupSharePageWithNotebook = () => {
   const { unload, updatePage, joinPage, rejectPage, isShared } =
     loadSharePageWithNotebook({
       getCurrentNotebookPageId: () =>
         logseq.Editor.getCurrentPage().then((p) =>
-          p && !("page" in p) ? addIdProperty(p).then(() => p.uuid) : ""
+          p && !("page" in p) ? p.name : ""
         ),
       applyState,
       calculateState,
@@ -632,55 +362,51 @@ const setupSharePageWithNotebook = () => {
                     { redirect: false }
                   )
               )
-              .then((page) => page?.uuid || ""),
-          getLocalPageTitle,
-          onLinkClick: (uuid, e) => {
-            getLocalPageTitle(uuid).then((title) => {
-              if (e.shiftKey) {
-                logseq.Editor.openInRightSidebar(uuid);
-              } else {
-                window.location.hash = `#/page/${encodeURIComponent(
-                  title.toLowerCase()
-                )}`;
-              }
-            });
+              .then(() => title.toLowerCase()),
+          onLinkClick: (notebookPageId, e) => {
+            if (e.shiftKey) {
+              logseq.Editor.openInRightSidebar(notebookPageId);
+            } else {
+              window.location.hash = `#/page/${encodeURIComponent(
+                notebookPageId
+              )}`;
+            }
           },
         },
         notificationContainerProps: {
           actions: {
-            accept: ({ app, workspace, pageUuid }) =>
+            accept: ({ app, workspace, pageUuid, title }) =>
               // TODO support block or page tree as a user action
-              window.logseq.Editor.createPage(
-                `samepage/page/${pageUuid}`,
-                {},
-                { redirect: false }
-              ).then((page) =>
-                addIdProperty(page)
-                  .then((notebookPageId) =>
-                    joinPage({
-                      pageUuid,
-                      notebookPageId,
-                      source: { app: Number(app) as AppId, workspace },
-                    }).then(() => getPageByPropertyId(notebookPageId))
-                  )
-                  .then((title) => {
-                    const todayName = dateFormat(new Date(), "MMM do, yyyy");
-                    return window.logseq.Editor.appendBlockInPage(
-                      todayName,
-                      `Accepted page [[${title?.originalName}]] from ${
-                        apps[Number(app)].name
-                      } / ${workspace}`
-                    );
-                  })
-                  .then(() => Promise.resolve())
-                  .catch((e) => {
-                    window.logseq.Editor.deletePage(
-                      `samepage/page/${pageUuid}`
-                    );
-                    console.error(e);
-                    return Promise.reject(e);
-                  })
-              ),
+              window.logseq.Editor.createPage(title, {}, { redirect: false })
+                .then((page) =>
+                  page
+                    ? joinPage({
+                        pageUuid,
+                        notebookPageId: page?.name,
+                        source: { app: Number(app) as AppId, workspace },
+                      }).then(() => {
+                        const todayName = dateFormat(
+                          new Date(),
+                          "MMM do, yyyy"
+                        );
+                        return window.logseq.Editor.appendBlockInPage(
+                          todayName,
+                          `Accepted page [[${title}]] from ${
+                            apps[Number(app)].name
+                          } / ${workspace}`
+                        );
+                      })
+                    : Promise.reject(
+                        `Failed to create a page with title ${title}`
+                      )
+                )
+
+                .then(() => Promise.resolve())
+                .catch((e) => {
+                  window.logseq.Editor.deletePage(title);
+                  console.error(e);
+                  return Promise.reject(e);
+                }),
             reject: async ({ workspace, app, pageUuid }) =>
               rejectPage({
                 source: { app: Number(app) as AppId, workspace },
@@ -816,20 +542,16 @@ const setupSharePageWithNotebook = () => {
           },
         },
         sharedPageStatusProps: {
-          getHtmlElement: async (uuid) => {
-            const page = await getPageByPropertyId(uuid);
+          getHtmlElement: async (notebookPageId) => {
             return Array.from(
               window.parent.document.querySelectorAll<HTMLHeadingElement>(
                 "h1.title"
               )
-            ).find((h) => h.textContent === page?.name);
+            ).find((h) => h.textContent?.toLowerCase() === notebookPageId);
           },
           selector: "h1.title",
-          getNotebookPageId: (h) => {
-            const title = h.textContent || "";
-            return window.logseq.DB.datascriptQuery(
-              `[:find ?id :where [?p :block/name "${title.toLowerCase()}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
-            ).then((b) => b[0]?.[0] as string);
+          getNotebookPageId: async (h) => {
+            return h.textContent?.toLowerCase() || "";
           },
           getPath: (heading) =>
             heading?.parentElement?.parentElement?.parentElement || null,
@@ -865,6 +587,7 @@ const setupSharePageWithNotebook = () => {
   let updateTimeout = 0;
   const bodyListener = async (e: KeyboardEvent) => {
     const el = e.target as HTMLElement;
+    if (/^Arrow/.test(e.key)) return;
     if (el.tagName === "TEXTAREA" && el.classList.contains("normal-block")) {
       const blockUuid =
         el.id.match(
@@ -873,18 +596,17 @@ const setupSharePageWithNotebook = () => {
       const notebookPage = await window.logseq.Editor.getBlock(blockUuid).then(
         (block) => block && window.logseq.Editor.getPage(block.page.id)
       );
-      const notebookPageId = await window.logseq.DB.datascriptQuery(
-        `[:find ?id :where [?p :block/original-name "${notebookPage?.originalName}"] [?b :block/page ?p] [?b :block/properties ?prop] [[get ?prop :samepage] ?id]]`
-      ).then((b) => b[0]?.[0] as string);
+      const notebookPageId = notebookPage?.name || "";
       if (isShared(notebookPageId)) {
         window.clearTimeout(updateTimeout);
         updateTimeout = window.setTimeout(async () => {
           const doc = await calculateState(notebookPageId);
           updatePage({
             notebookPageId,
-            label: `keydown-${e.key}`,
+            label: `Refresh`,
             callback: (oldDoc) => {
-              oldDoc.content = doc.content;
+              oldDoc.content.deleteAt?.(0, oldDoc.content.length);
+              oldDoc.content.insertAt?.(0, ...new Automerge.Text(doc.content));
               if (!oldDoc.annotations) oldDoc.annotations = [];
               oldDoc.annotations.splice(0, oldDoc.annotations.length);
               doc.annotations.forEach((a) => oldDoc.annotations.push(a));
@@ -898,7 +620,6 @@ const setupSharePageWithNotebook = () => {
 
   return () => {
     window.clearTimeout(updateTimeout);
-    Array.from(unmountCallbacks).forEach((c) => c());
     window.parent.document.body.removeEventListener("keydown", bodyListener);
     idObserver.disconnect();
     unload();

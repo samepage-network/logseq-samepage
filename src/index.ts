@@ -1,6 +1,5 @@
 import "@logseq/libs";
 import setupSamePageClient from "samepage/protocols/setupSamePageClient";
-import UsageChart from "samepage/components/UsageChart";
 import defaultSettings from "samepage/utils/defaultSettings";
 import { onAppEvent } from "samepage/internal/registerAppEventListener";
 import { renderLoading } from "./components/Loading";
@@ -72,7 +71,7 @@ div.samepage-notification-container {
       }
     },
     renderOverlay,
-    portalContainer: window.parent.document.body,
+    appRoot: window.parent.document.body,
   });
   onAppEvent("log", (evt) =>
     window.logseq.UI.showMsg(
