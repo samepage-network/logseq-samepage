@@ -587,6 +587,7 @@ const setupSharePageWithNotebook = () => {
   let updateTimeout = 0;
   const bodyListener = async (e: KeyboardEvent) => {
     const el = e.target as HTMLElement;
+    if (e.metaKey) return;
     if (/^Arrow/.test(e.key)) return;
     if (el.tagName === "TEXTAREA" && el.classList.contains("normal-block")) {
       const blockUuid =
