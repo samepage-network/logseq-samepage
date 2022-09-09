@@ -141,9 +141,7 @@ const toAtJson = async ({
     );
 };
 
-const flattenTree = <
-  T extends { children?: (T | BlockUUIDTuple)[]; uuid?: string }
->(
+const flattenTree = <T extends { children?: (T | BlockUUIDTuple)[] }>(
   tree: T[]
 ): Omit<T, "children">[] =>
   tree.flatMap(({ children = [], ...t }) => [
@@ -168,7 +166,6 @@ const calculateState = async (notebookPageId: string) => {
 
 type SamepageNode = {
   content: string;
-  uuid: string;
   level: number;
   annotation: {
     start: number;
@@ -183,7 +180,6 @@ const applyState = async (notebookPageId: string, state: Schema) => {
     if (anno.type === "block") {
       const currentBlock = {
         content: state.content.slice(anno.start, anno.end).join(""),
-        uuid: anno.attributes["identifier"],
         level: anno.attributes.level,
         annotation: {
           start: anno.start,
@@ -255,14 +251,12 @@ const applyState = async (notebookPageId: string, state: Schema) => {
   const actualTree = await window.logseq.Editor.getPageBlocksTree(
     notebookPageId
   ).then((tree = []) => flattenTree(tree.filter(isContentBlock)));
-  const blockUuidBySamepageUuid: Record<string, string> = {};
 
   const promises = expectedTree
-    .map((expectedNode, order, all) => () => {
+    .map((expectedNode, order) => () => {
       if (actualTree.length > order) {
         const actualNode = actualTree[order] as BlockEntity;
         const blockUuid = actualNode.uuid;
-        blockUuidBySamepageUuid[expectedNode.uuid] = blockUuid;
         return window.logseq.Editor.updateBlock(blockUuid, expectedNode.content)
           .catch((e) => Promise.reject(`Failed to update block: ${e.message}`))
           .then(() => {
@@ -270,13 +264,11 @@ const applyState = async (notebookPageId: string, state: Schema) => {
               const parent =
                 expectedNode.level === 1
                   ? notebookPageId
-                  : blockUuidBySamepageUuid[
-                      all
-                        .slice(0, order)
-                        .reverse()
-                        .find((node) => node.level < expectedNode.level)
-                        ?.uuid || ""
-                    ];
+                  : actualTree
+                      .slice(0, order)
+                      .reverse()
+                      .find((node) => node.level < expectedNode.level)?.uuid ||
+                    "";
               if (parent)
                 return window.logseq.Editor.moveBlock(actualNode.uuid, parent, {
                   children: true,
@@ -292,19 +284,16 @@ const applyState = async (notebookPageId: string, state: Schema) => {
         const parent =
           expectedNode.level === 1
             ? notebookPageId
-            : blockUuidBySamepageUuid[
-                all
-                  .slice(0, order)
-                  .reverse()
-                  .find((node) => node.level < expectedNode.level)?.uuid || ""
-              ];
+            : actualTree
+                .slice(0, order)
+                .reverse()
+                .find((node) => node.level < expectedNode.level)?.uuid || "";
+
         return window.logseq.Editor.appendBlockInPage(
           parent,
           expectedNode.content
         )
-          .then((block) => {
-            blockUuidBySamepageUuid[expectedNode.uuid] = block?.uuid || "";
-          })
+          .then(() => Promise.resolve())
           .catch((e) => Promise.reject(`Failed to append block: ${e.message}`));
       }
     })

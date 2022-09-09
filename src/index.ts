@@ -42,6 +42,9 @@ div.samepage-notification-container {
   top: 40px;
   bottom: unset;
 }
+div#main-content-container div[data-render*="-"] {
+  flex-direction: column;
+}
 `);
 
   const workspace = await logseq.App.getCurrentGraph().then(
