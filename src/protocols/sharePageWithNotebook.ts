@@ -75,69 +75,46 @@ const openIdb = async () =>
     },
   }));
 
-const toAtJson = async ({
-  notebookPageId,
-  nodes = [],
-}: {
-  notebookPageId: string;
-  nodes?: BlockEntity[];
-}): Promise<InitialSchema> => {
+const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
   return flattenTree(nodes)
-    .map(
-      (n, order) => (index: number) =>
-        logseqToSamepage(`${notebookPageId}~${order}`)
-          .then(
-            (identifier) =>
-              identifier ||
-              Promise.resolve(v4()).then((samepageUuid) =>
-                saveIdMap(n.uuid, samepageUuid).then(() => samepageUuid)
-              )
-          )
-          .then(async (identifier) => {
-            const preContent = n.content
-              .replace(new RegExp(`\\nid:: ${n.uuid}`), "")
-              .replace(new RegExp(`\\ntitle:: [^\\n]+`), "");
-            const { content, annotations } = atJsonParser(
-              blockGrammar,
-              preContent
-            );
-            const end = content.length + index;
-            const blockAnnotations: Schema["annotations"] = [
-              {
-                start: index,
-                end,
-                attributes: {
-                  identifier,
-                  level: n.level || 0,
-                  viewType: "bullet",
-                },
-                type: "block",
-              },
-            ];
-            return {
-              content,
-              annotations: blockAnnotations.concat(
-                annotations.map((a) => ({
-                  ...a,
-                  start: a.start + index,
-                  end: a.end + index,
-                }))
-              ),
-            };
-          })
-    )
-    .reduce(
-      (p, c) =>
-        p.then(({ content: pc, annotations: pa }) =>
-          c(pc.length).then(({ content: cc, annotations: ca }) => ({
-            content: `${pc}${cc}`,
-            annotations: pa.concat(ca),
+    .map((n, order) => (index: number) => {
+      const { content, annotations } = atJsonParser(blockGrammar, n.content);
+      const end = content.length + index;
+      const blockAnnotations: Schema["annotations"] = [
+        {
+          start: index,
+          end,
+          attributes: {
+            level: n.level || 0,
+            viewType: "bullet",
+          },
+          type: "block",
+        },
+      ];
+      return {
+        content,
+        annotations: blockAnnotations.concat(
+          annotations.map((a) => ({
+            ...a,
+            start: a.start + index,
+            end: a.end + index,
           }))
         ),
-      Promise.resolve({
+      };
+    })
+    .reduce(
+      (p, c) => {
+        const { content: pc, annotations: pa } = p;
+        const { content: cc, annotations: ca } = c(pc.length);
+        return {
+          content: `${pc}${cc}`,
+          annotations: pa.concat(ca),
+        };
+      },
+      {
         content: "",
         annotations: [] as Schema["annotations"],
-      })
+      }
     );
 };
 
@@ -160,7 +137,6 @@ const calculateState = async (notebookPageId: string) => {
 
   return toAtJson({
     nodes,
-    notebookPageId,
   });
 };
 
@@ -573,7 +549,13 @@ const setupSharePageWithNotebook = () => {
     },
   });
 
-  let updateTimeout = 0;
+  let refreshRef: (() => void) | undefined;
+  const clearRefreshRef = () => {
+    if (refreshRef) {
+      refreshRef?.();
+      refreshRef = undefined;
+    }
+  };
   const bodyListener = async (e: KeyboardEvent) => {
     const el = e.target as HTMLElement;
     if (e.metaKey) return;
@@ -588,13 +570,14 @@ const setupSharePageWithNotebook = () => {
       );
       const notebookPageId = notebookPage?.name || "";
       if (isShared(notebookPageId)) {
-        window.clearTimeout(updateTimeout);
-        updateTimeout = window.setTimeout(async () => {
+        clearRefreshRef();
+        refreshRef = window.logseq.DB.onBlockChanged(blockUuid, async () => {
           const doc = await calculateState(notebookPageId);
           updatePage({
             notebookPageId,
             label: `Refresh`,
             callback: (oldDoc) => {
+              clearRefreshRef();
               oldDoc.content.deleteAt?.(0, oldDoc.content.length);
               oldDoc.content.insertAt?.(0, ...new Automerge.Text(doc.content));
               if (!oldDoc.annotations) oldDoc.annotations = [];
@@ -602,14 +585,14 @@ const setupSharePageWithNotebook = () => {
               doc.annotations.forEach((a) => oldDoc.annotations.push(a));
             },
           });
-        }, 1000);
+        });
       }
     }
   };
   window.parent.document.body.addEventListener("keydown", bodyListener);
 
   return () => {
-    window.clearTimeout(updateTimeout);
+    clearRefreshRef();
     window.parent.document.body.removeEventListener("keydown", bodyListener);
     idObserver.disconnect();
     unload();

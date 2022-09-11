@@ -3,9 +3,9 @@
 @preprocessor typescript
 
 @{%
-import { 
-   compileLexer, 
+import {
    createBoldToken,
+   createEmpty,
    createHighlightingToken,
    createItalicsToken,
    createLinkToken,
@@ -13,8 +13,7 @@ import {
    createTextToken,
    disambiguateTokens,
 } from "samepage/utils/atJsonTokens";
-
-const lexer = compileLexer({});
+import lexer from "./blockLexer";
 %}
 
 @lexer lexer
@@ -39,3 +38,5 @@ token -> %highlight tokens %highlight {% createHighlightingToken %}
    | %leftBracket {% createTextToken %}
    | %rightParen {% createTextToken %}
    | %rightBracket {% createTextToken %}
+   | %newLine {% createTextToken %}
+   | %attribute {% createEmpty %}
