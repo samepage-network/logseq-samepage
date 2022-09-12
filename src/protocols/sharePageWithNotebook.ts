@@ -151,6 +151,9 @@ type SamepageNode = {
 };
 
 const applyState = async (notebookPageId: string, state: Schema) => {
+  const rootPageUuid = await window.logseq.Editor.getPage(notebookPageId).then(
+    (p) => p?.uuid
+  );
   const expectedTree: SamepageNode[] = [];
   state.annotations.forEach((anno) => {
     if (anno.type === "block") {
@@ -236,23 +239,41 @@ const applyState = async (notebookPageId: string, state: Schema) => {
         return window.logseq.Editor.updateBlock(blockUuid, expectedNode.content)
           .catch((e) => Promise.reject(`Failed to update block: ${e.message}`))
           .then(() => {
-            if ((actualNode.level || 0) !== expectedNode.level) {
-              const parent =
-                expectedNode.level === 1
-                  ? notebookPageId
-                  : actualTree
-                      .slice(0, order)
+            if (actualNode.level !== expectedNode.level) {
+              const getParent = () => {
+                if (expectedNode.level === 1) {
+                  return { parent: rootPageUuid, index: -1 };
+                }
+                const index =
+                  order -
+                  1 -
+                  actualTree
+                    .slice(0, order)
+                    .reverse()
+                    .findIndex((node) => node.level < expectedNode.level);
+                return { parent: actualTree[index].uuid, index };
+              };
+              const { parent, index } = getParent();
+              const previousSibling =
+                index >= 0
+                  ? actualTree
+                      .slice(index, order)
                       .reverse()
-                      .find((node) => node.level < expectedNode.level)?.uuid ||
-                    "";
-              if (parent)
-                return window.logseq.Editor.moveBlock(actualNode.uuid, parent, {
-                  children: true,
-                })
-                  .then(() => Promise.resolve())
-                  .catch((e) =>
-                    Promise.reject(`Failed to move block: ${e.message}`)
-                  );
+                      .find((a) => a.level === expectedNode.level)
+                  : undefined;
+              (previousSibling
+                ? window.logseq.Editor.moveBlock(
+                    actualNode.uuid,
+                    previousSibling.uuid
+                  )
+                : window.logseq.Editor.moveBlock(actualNode.uuid, parent, {
+                    children: true,
+                  })
+              )
+                .then(() => Promise.resolve())
+                .catch((e) =>
+                  Promise.reject(`Failed to move block: ${e.message}`)
+                );
             }
             return Promise.resolve();
           });

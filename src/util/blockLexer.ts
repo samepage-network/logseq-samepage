@@ -1,9 +1,8 @@
-import { compileLexer, Processor, URL_REGEX } from "samepage/utils/atJsonTokens";
-import type { InitialSchema } from "samepage/types";
+import { compileLexer, DEFAULT_TOKENS } from "samepage/utils/atJsonTokens";
 
 const lexer = compileLexer({
   attribute: { match: /\n?[a-z]+::[^\n]+/, lineBreaks: true },
-  url: URL_REGEX,
+  url: DEFAULT_TOKENS.url,
   newLine: { match: /\n/, lineBreaks: true },
   text: { match: /(?:[^:^~_*[\]\n()]|:(?!:))+/, lineBreaks: true },
 });
