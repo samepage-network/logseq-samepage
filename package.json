@@ -1,6 +1,6 @@
 {
   "name": "logseq-samepage",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Official LogSeq client into the inter-TFT-protocol",
   "main": "index.html",
   "scripts": {
