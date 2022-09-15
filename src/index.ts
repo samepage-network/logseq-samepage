@@ -7,6 +7,12 @@ import setupSharePageWithNotebook from "./protocols/sharePageWithNotebook";
 import renderOverlay from "./components/renderOverlay";
 import type { SettingSchemaDesc } from "@logseq/libs/dist/LSPlugin";
 
+const IGNORED_LOGS = new Set([
+  "list-pages-success",
+  "load-remote-message",
+  "update-success",
+]);
+
 const main = async () => {
   logseq.useSettingsSchema(
     defaultSettings.map(
@@ -76,12 +82,15 @@ div#main-content-container div[data-render*="-"] {
     renderOverlay,
     appRoot: window.parent.document.body,
   });
-  onAppEvent("log", (evt) =>
-    window.logseq.UI.showMsg(
-      evt.content,
-      evt.intent === "info" ? "success" : evt.intent,
-      { timeout: 5000 }
-    )
+  onAppEvent(
+    "log",
+    (evt) =>
+      !IGNORED_LOGS.has(evt.id) &&
+      window.logseq.UI.showMsg(
+        evt.content,
+        evt.intent === "info" ? "success" : evt.intent,
+        { timeout: 5000 }
+      )
   );
   let removeLoadingCallback: (() => void) | undefined;
   onAppEvent("connection", (evt) => {
