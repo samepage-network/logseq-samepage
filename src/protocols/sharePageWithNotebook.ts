@@ -9,7 +9,6 @@ import type {
 } from "@logseq/libs/dist/LSPlugin.user";
 import Automerge from "automerge";
 import { openDB, IDBPDatabase } from "idb";
-import { v4 } from "uuid";
 import dateFormat from "date-fns/format";
 //@ts-ignore Fix later, already compiles
 import blockGrammar from "../util/blockGrammar.ne";
