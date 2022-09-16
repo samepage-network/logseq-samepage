@@ -2,7 +2,7 @@ import type { AppId, InitialSchema, Schema } from "samepage/types";
 import loadSharePageWithNotebook from "samepage/protocols/sharePageWithNotebook";
 import atJsonParser from "samepage/utils/atJsonParser";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
-import { apps } from "samepage/internal/registry";
+import apps from "samepage/internal/apps";
 import type {
   BlockEntity,
   BlockUUIDTuple,
