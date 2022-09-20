@@ -52,25 +52,12 @@ const getSubTree = ({
   };
 };
 
-const logseqToSamepage = (s: string) =>
-  openIdb()
-    .then((db) => db.get("logseq-to-samepage", s))
-    .then((v) => (v as string) || "");
-const saveIdMap = (logseq: string, samepage: string) =>
-  openIdb().then((db) =>
-    Promise.all([
-      db.put("logseq-to-samepage", samepage, logseq),
-      db.put("samepage-to-logseq", logseq, samepage),
-    ])
-  );
 let db: IDBPDatabase;
 const openIdb = async () =>
   db ||
   (db = await openDB("samepage", 2, {
     upgrade(db) {
       db.createObjectStore("pages");
-      db.createObjectStore("logseq-to-samepage");
-      db.createObjectStore("samepage-to-logseq");
     },
   }));
 
@@ -269,11 +256,14 @@ const applyState = async (notebookPageId: string, state: Schema) => {
                     children: true,
                   })
               )
-                .then(() => Promise.resolve())
+                .then(() => {
+                  actualNode.level = expectedNode.level;
+                })
                 .catch((e) =>
                   Promise.reject(`Failed to move block: ${e.message}`)
                 );
             }
+            actualNode.content = expectedNode.content;
             return Promise.resolve();
           });
       } else {
@@ -361,7 +351,6 @@ const setupSharePageWithNotebook = () => {
         notificationContainerProps: {
           actions: {
             accept: ({ app, workspace, pageUuid, title }) =>
-              // TODO support block or page tree as a user action
               window.logseq.Editor.createPage(title, {}, { redirect: false })
                 .then((page) =>
                   page

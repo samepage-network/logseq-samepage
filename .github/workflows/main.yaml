@@ -21,9 +21,5 @@ jobs:
         run: npm install
       - name: build
         run: npx samepage build
-      - name: package
-        run: zip -q dist/logseq.zip README.md dist/index.js dist/index.css dist/normalize.css dist/blueprint.css dist/blueprint-icons.css index.html logo.svg package.json
       - name: deploy
-        run: |
-          VERSION=$(cat package.json | grep version | cut -d ':' -f 2 | cut -d '"' -f 2)
-          aws s3 cp dist/logseq.zip s3://samepage.network/extensions/logseq.zip --metadata Version=$VERSION
+        run: npx samepage publish
