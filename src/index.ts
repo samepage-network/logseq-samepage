@@ -3,7 +3,9 @@ import setupSamePageClient from "samepage/protocols/setupSamePageClient";
 import defaultSettings from "samepage/utils/defaultSettings";
 import { onAppEvent } from "samepage/internal/registerAppEventListener";
 import { renderLoading } from "./components/Loading";
-import setupSharePageWithNotebook from "./protocols/sharePageWithNotebook";
+import setupSharePageWithNotebook, {
+  granularChanges,
+} from "./protocols/sharePageWithNotebook";
 import renderOverlay from "./components/renderOverlay";
 import type { SettingSchemaDesc } from "@logseq/libs/dist/LSPlugin";
 
@@ -26,6 +28,9 @@ const main = async () => {
         } as SettingSchemaDesc)
     )
   );
+  logseq.onSettingsChanged((_, b) => {
+    granularChanges.enabled = !!b["granular-changes"];
+  });
 
   logseq.provideStyle(`@import url("https://unpkg.com/normalize.css@^8.0.1");
 @import url("https://unpkg.com/@blueprintjs/core@^4.8.0/lib/css/blueprint.css");
