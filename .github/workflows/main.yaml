@@ -22,4 +22,4 @@ jobs:
       - name: build
         run: npx samepage build --include index.html --include package.json --include README.md  --include logo.svg
       - name: deploy
-        run: npx samepage publish --domain samepage.network/extensions --path roam
+        run: npx samepage publish --domain samepage.network/extensions --path logseq
