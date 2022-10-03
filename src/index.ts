@@ -32,31 +32,20 @@ const main = async () => {
     granularChanges.enabled = !!b["granular-changes"];
   });
 
-  logseq.provideStyle(`@import url("https://unpkg.com/normalize.css@^8.0.1");
-@import url("https://unpkg.com/@blueprintjs/core@^4.8.0/lib/css/blueprint.css");
-body {
-  font-size: 16px;
-}
-a.page-title:hover {
-  text-decoration: none;
-}
-.flex-col-reverse {
-  flex-direction: column-reverse;
-}
-.top-2 {
-  top: 8px;
-}
-.right-2 {
-  right: 8px;
-}
-div.samepage-notification-container { 
-  top: 40px;
-  bottom: unset;
-}
+  fetch("samepage.css")
+    .then((r) => r.text())
+    .then((style) =>
+      logseq.provideStyle(`${style}
+
 div#main-content-container div[data-render*="-"] {
   flex-direction: column;
 }
-`);
+
+.samepage-shared-page-status img {
+  margin: 0;
+}
+`)
+    );
 
   const workspace = await logseq.App.getCurrentGraph().then(
     (info) => info?.name || ""

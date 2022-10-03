@@ -346,7 +346,7 @@ const setupSharePageWithNotebook = () => {
                 page ||
                 window.logseq.Editor.createPage(title, {}, { redirect: false })
             )
-            .then(() => title.toLowerCase()),
+            .then(() => title),
         onLinkClick: (notebookPageId, e) => {
           if (e.shiftKey) {
             logseq.Editor.openInRightSidebar(notebookPageId);
@@ -365,8 +365,7 @@ const setupSharePageWithNotebook = () => {
                 page
                   ? joinPage({
                       pageUuid,
-                      notebookPageId: page?.name,
-                      source: { app: Number(app) as AppId, workspace },
+                      notebookPageId: title,
                     }).then(() => {
                       const todayName = dateFormat(new Date(), "MMM do, yyyy");
                       return window.logseq.Editor.appendBlockInPage(
@@ -384,13 +383,11 @@ const setupSharePageWithNotebook = () => {
               .then(() => Promise.resolve())
               .catch((e) => {
                 window.logseq.Editor.deletePage(title);
-                console.error(e);
                 return Promise.reject(e);
               }),
-          reject: async ({ workspace, app, pageUuid }) =>
+          reject: async ({ title }) =>
             rejectPage({
-              source: { app: Number(app) as AppId, workspace },
-              pageUuid,
+              notebookPageId: title,
             }),
         },
         api: {
@@ -524,11 +521,15 @@ const setupSharePageWithNotebook = () => {
             window.parent.document.querySelectorAll<HTMLHeadingElement>(
               "h1.title"
             )
-          ).find((h) => h.textContent?.toLowerCase() === notebookPageId);
+          ).find(
+            (h) => h.textContent?.toLowerCase() === notebookPageId.toLowerCase()
+          );
         },
         selector: "h1.title",
         getNotebookPageId: async (h) => {
-          return h.textContent?.toLowerCase() || "";
+          return window.logseq.Editor.getPage(
+            h.textContent?.toLowerCase() || ""
+          ).then((p) => p?.originalName || "");
         },
         getPath: (heading) =>
           heading?.parentElement?.parentElement?.parentElement || null,
@@ -580,7 +581,7 @@ const setupSharePageWithNotebook = () => {
       const notebookPage = await window.logseq.Editor.getBlock(blockUuid).then(
         (block) => block && window.logseq.Editor.getPage(block.page.id)
       );
-      const notebookPageId = notebookPage?.name || "";
+      const notebookPageId = notebookPage?.originalName || "";
       if (isShared(notebookPageId)) {
         const { selectionStart, selectionEnd } = el as HTMLTextAreaElement;
         clearRefreshRef();
