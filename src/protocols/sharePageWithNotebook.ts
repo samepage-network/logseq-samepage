@@ -12,6 +12,7 @@ import { openDB, IDBPDatabase } from "idb";
 import dateFormat from "date-fns/format";
 //@ts-ignore Fix later, already compiles
 import blockGrammar from "../util/blockGrammar.ne";
+import renderAtJson from "samepage/utils/renderAtJson";
 
 const toFlexRegex = (key: string): RegExp =>
   new RegExp(`^\\s*${key.replace(/([()])/g, "\\$1")}\\s*$`, "i");
@@ -177,59 +178,38 @@ const applyState = async (notebookPageId: string, state: Schema) => {
       start: a.start - offset,
       end: a.end - offset,
     }));
-    const annotatedText = normalizedAnnotations
-      .map((annotation, index) => ({ annotation, index }))
-      .sort((a, b) => {
-        const asize = a.annotation.end - a.annotation.start;
-        const bsize = b.annotation.end - b.annotation.start;
-        return bsize - asize || a.index - b.index;
-      })
-      .map(({ annotation }) => annotation)
-      .reduce((p, c, index, all) => {
-        const appliedAnnotation =
-          c.type === "bold"
-            ? {
-                prefix: "**",
-                suffix: `**`,
-              }
-            : c.type === "highlighting"
-            ? {
-                prefix: "^^",
-                suffix: `^^`,
-              }
-            : c.type === "italics"
-            ? {
-                prefix: "_",
-                suffix: `_`,
-              }
-            : c.type === "strikethrough"
-            ? {
-                prefix: "~~",
-                suffix: `~~`,
-              }
-            : c.type === "link"
-            ? {
-                prefix: "[",
-                suffix: `](${c.attributes.href})`,
-              }
-            : { prefix: "", suffix: "" };
-        const annotatedContent = p.slice(c.start, c.end);
-        const isEmptyAnnotation = annotatedContent === String.fromCharCode(0);
-        all.slice(index + 1).forEach((a) => {
-          a.start +=
-            (a.start >= c.start ? appliedAnnotation.prefix.length : 0) +
-            (a.start >= c.end ? appliedAnnotation.suffix.length : 0) +
-            (isEmptyAnnotation && a.start >= c.end ? -1 : 0);
-          a.end +=
-            (a.end >= c.start ? appliedAnnotation.prefix.length : 0) +
-            (a.end >= c.end ? appliedAnnotation.suffix.length : 0) +
-            (isEmptyAnnotation && a.end > c.end ? -1 : 0);
-        });
-        return `${p.slice(0, c.start)}${appliedAnnotation.prefix}${
-          isEmptyAnnotation ? "" : annotatedContent
-        }${appliedAnnotation.suffix}${p.slice(c.end)}`;
-      }, block.content);
-    block.content = annotatedText;
+    block.content = renderAtJson({
+      state: {
+        content: block.content,
+        annotations: normalizedAnnotations,
+      },
+      applyAnnotation: {
+        bold: {
+          prefix: "**",
+          suffix: `**`,
+        },
+        highlighting: {
+          prefix: "^^",
+          suffix: `^^`,
+        },
+        italics: {
+          prefix: "_",
+          suffix: `_`,
+        },
+        strikethrough: {
+          prefix: "~~",
+          suffix: `~~`,
+        },
+        link: ({ href }) => ({
+          prefix: "[",
+          suffix: `](${href})`,
+        }),
+        image: ({ src }) => ({
+          prefix: "![",
+          suffix: `](${src})`,
+        }),
+      },
+    });
   });
   const actualTree = await window.logseq.Editor.getPageBlocksTree(
     notebookPageId
@@ -573,6 +553,29 @@ const setupSharePageWithNotebook = () => {
       }
     },
   });
+  const refreshState = ({
+    blockUuid,
+    notebookPageId,
+  }: {
+    blockUuid: string;
+    notebookPageId: string;
+  }) => {
+    refreshRef = window.logseq.DB.onBlockChanged(blockUuid, async () => {
+      const doc = await calculateState(notebookPageId);
+      updatePage({
+        notebookPageId,
+        label: `Refresh`,
+        callback: (oldDoc) => {
+          clearRefreshRef();
+          oldDoc.content.deleteAt?.(0, oldDoc.content.length);
+          oldDoc.content.insertAt?.(0, ...new Automerge.Text(doc.content));
+          if (!oldDoc.annotations) oldDoc.annotations = [];
+          oldDoc.annotations.splice(0, oldDoc.annotations.length);
+          doc.annotations.forEach((a) => oldDoc.annotations.push(a));
+        },
+      });
+    });
+  };
 
   let refreshRef: (() => void) | undefined;
   const clearRefreshRef = () => {
@@ -581,7 +584,7 @@ const setupSharePageWithNotebook = () => {
       refreshRef = undefined;
     }
   };
-  const bodyListener = async (e: KeyboardEvent) => {
+  const bodyKeydownListener = async (e: KeyboardEvent) => {
     const el = e.target as HTMLElement;
     if (e.metaKey) return;
     if (/^Arrow/.test(e.key)) return;
@@ -662,11 +665,36 @@ const setupSharePageWithNotebook = () => {
       }
     }
   };
-  window.parent.document.body.addEventListener("keydown", bodyListener);
+  window.parent.document.body.addEventListener("keydown", bodyKeydownListener);
 
+  const bodyPasteListener = async (e: ClipboardEvent) => {
+    const el = e.target as HTMLElement;
+    if (el.tagName === "TEXTAREA" && el.classList.contains("normal-block")) {
+      const blockUuid =
+        el.id.match(
+          /^edit-block-\d+-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/
+        )?.[1] || "";
+      const notebookPage = await window.logseq.Editor.getBlock(blockUuid).then(
+        (block) => block && window.logseq.Editor.getPage(block.page.id)
+      );
+      const notebookPageId = notebookPage?.originalName || "";
+      if (isShared(notebookPageId)) {
+        clearRefreshRef();
+        refreshState({ notebookPageId, blockUuid });
+      }
+    }
+  };
+  window.parent.document.body.addEventListener("paste", bodyPasteListener);
   return () => {
     clearRefreshRef();
-    window.parent.document.body.removeEventListener("keydown", bodyListener);
+    window.parent.document.body.removeEventListener(
+      "keydown",
+      bodyKeydownListener
+    );
+    window.parent.document.body.removeEventListener(
+      "paste",
+      bodyPasteListener
+    );
     idObserver.disconnect();
     unload();
   };

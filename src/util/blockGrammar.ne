@@ -11,6 +11,7 @@ import {
    createLinkToken,
    createStrikethroughToken,
    createTextToken,
+   createImageToken,
    disambiguateTokens,
 } from "samepage/utils/atJsonTokens";
 import lexer from "./blockLexer";
@@ -29,6 +30,7 @@ token -> %highlight tokens %highlight {% createHighlightingToken %}
    | %under tokens %under {% createItalicsToken %}
    | %star tokens %star {% createItalicsToken %}
    | %leftBracket tokens %rightBracket %leftParen %url %rightParen {% createLinkToken %}
+   | %exclamationMark %leftBracket (tokens {% id %} | null {% id %}) %rightBracket %leftParen %url %rightParen {% createImageToken %}
    | %text {% createTextToken %}
    | %star  {% createTextToken %}
    | %carot  {% createTextToken %}
@@ -40,3 +42,5 @@ token -> %highlight tokens %highlight {% createHighlightingToken %}
    | %rightBracket {% createTextToken %}
    | %newLine {% createTextToken %}
    | %attribute {% createEmpty %}
+   | %exclamationMark {% createTextToken %}
+   | %leftBracket %rightBracket %leftParen %url %rightParen {% createTextToken %}

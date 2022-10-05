@@ -1,6 +1,8 @@
+// TODO make this test friendly - https://github.com/microsoft/playwright/issues/17852
 import blockGrammar from "../src/util/blockGrammar";
 import type { InitialSchema } from "samepage/types";
 import atJsonParser from "samepage/utils/atJsonParser";
+import { test, expect } from "@playwright/test";
 
 const runTest = (md: string, expected: InitialSchema) => () => {
   const output = atJsonParser(blockGrammar, md);
@@ -97,5 +99,55 @@ test(
   runTest("id:: 12345678-abdf-1234-5678-abcdef123456", {
     content: "",
     annotations: [],
+  })
+);
+
+test(
+  "Aliasless link",
+  runTest("A [](https://samepage.network) text", {
+    content: "A [](https://samepage.network) text",
+    annotations: [],
+  })
+);
+
+test(
+  "Just a link",
+  runTest("Just a link: https://samepage.network", {
+    content: "Just a link: https://samepage.network",
+    annotations: [],
+  })
+);
+
+test(
+  "Image with alias",
+  runTest("![alias](https://samepage.network/images/logo.png)", {
+    content: "alias",
+    annotations: [
+      {
+        type: "image",
+        start: 0,
+        end: 5,
+        attributes: {
+          src: "https://samepage.network/images/logo.png",
+        },
+      },
+    ],
+  })
+);
+
+test(
+  "Image without alias",
+  runTest("![](https://samepage.network/images/logo.png)", {
+    content: String.fromCharCode(0),
+    annotations: [
+      {
+        type: "image",
+        start: 0,
+        end: 1,
+        attributes: {
+          src: "https://samepage.network/images/logo.png",
+        },
+      },
+    ],
   })
 );
