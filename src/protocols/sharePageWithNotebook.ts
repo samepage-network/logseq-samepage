@@ -63,8 +63,12 @@ const openIdb = async () =>
 
 const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
   return flattenTree(nodes)
-    .map((n, order) => (index: number) => {
-      const { content, annotations } = atJsonParser(blockGrammar, n.content);
+    .map((n) => (index: number) => {
+      const { content: _content, annotations } = atJsonParser(
+        blockGrammar,
+        n.content
+      );
+      const content = _content.length ? _content : String.fromCharCode(0);
       const end = content.length + index;
       const blockAnnotations: Schema["annotations"] = [
         {
@@ -173,47 +177,58 @@ const applyState = async (notebookPageId: string, state: Schema) => {
       start: a.start - offset,
       end: a.end - offset,
     }));
-    const annotatedText = normalizedAnnotations.reduce((p, c, index, all) => {
-      const appliedAnnotation =
-        c.type === "bold"
-          ? {
-              prefix: "**",
-              suffix: `**`,
-            }
-          : c.type === "highlighting"
-          ? {
-              prefix: "^^",
-              suffix: `^^`,
-            }
-          : c.type === "italics"
-          ? {
-              prefix: "_",
-              suffix: `_`,
-            }
-          : c.type === "strikethrough"
-          ? {
-              prefix: "~~",
-              suffix: `~~`,
-            }
-          : c.type === "link"
-          ? {
-              prefix: "[",
-              suffix: `](${c.attributes.href})`,
-            }
-          : { prefix: "", suffix: "" };
-      all.slice(index + 1).forEach((a) => {
-        a.start +=
-          (a.start >= c.start ? appliedAnnotation.prefix.length : 0) +
-          (a.start >= c.end ? appliedAnnotation.suffix.length : 0);
-        a.end +=
-          (a.end >= c.start ? appliedAnnotation.prefix.length : 0) +
-          (a.end > c.end ? appliedAnnotation.suffix.length : 0);
-      });
-      return `${p.slice(0, c.start)}${appliedAnnotation.prefix}${p.slice(
-        c.start,
-        c.end
-      )}${appliedAnnotation.suffix}${p.slice(c.end)}`;
-    }, block.content);
+    const annotatedText = normalizedAnnotations
+      .map((annotation, index) => ({ annotation, index }))
+      .sort((a, b) => {
+        const asize = a.annotation.end - a.annotation.start;
+        const bsize = b.annotation.end - b.annotation.start;
+        return bsize - asize || a.index - b.index;
+      })
+      .map(({ annotation }) => annotation)
+      .reduce((p, c, index, all) => {
+        const appliedAnnotation =
+          c.type === "bold"
+            ? {
+                prefix: "**",
+                suffix: `**`,
+              }
+            : c.type === "highlighting"
+            ? {
+                prefix: "^^",
+                suffix: `^^`,
+              }
+            : c.type === "italics"
+            ? {
+                prefix: "_",
+                suffix: `_`,
+              }
+            : c.type === "strikethrough"
+            ? {
+                prefix: "~~",
+                suffix: `~~`,
+              }
+            : c.type === "link"
+            ? {
+                prefix: "[",
+                suffix: `](${c.attributes.href})`,
+              }
+            : { prefix: "", suffix: "" };
+        const annotatedContent = p.slice(c.start, c.end);
+        const isEmptyAnnotation = annotatedContent === String.fromCharCode(0);
+        all.slice(index + 1).forEach((a) => {
+          a.start +=
+            (a.start >= c.start ? appliedAnnotation.prefix.length : 0) +
+            (a.start >= c.end ? appliedAnnotation.suffix.length : 0) +
+            (isEmptyAnnotation && a.start >= c.end ? -1 : 0);
+          a.end +=
+            (a.end >= c.start ? appliedAnnotation.prefix.length : 0) +
+            (a.end >= c.end ? appliedAnnotation.suffix.length : 0) +
+            (isEmptyAnnotation && a.end > c.end ? -1 : 0);
+        });
+        return `${p.slice(0, c.start)}${appliedAnnotation.prefix}${
+          isEmptyAnnotation ? "" : annotatedContent
+        }${appliedAnnotation.suffix}${p.slice(c.end)}`;
+      }, block.content);
     block.content = annotatedText;
   });
   const actualTree = await window.logseq.Editor.getPageBlocksTree(
@@ -222,6 +237,25 @@ const applyState = async (notebookPageId: string, state: Schema) => {
 
   const promises = expectedTree
     .map((expectedNode, order) => () => {
+      const getParent = () => {
+        const parentOrder =
+          expectedNode.level === 1
+            ? -1
+            : actualTree
+                .slice(0, order)
+                .map((node, originalIndex) => ({
+                  level: node.level,
+                  originalIndex,
+                }))
+                .reverse()
+                .concat([{ level: 0, originalIndex: -1 }])
+                .find(({ level }) => level < expectedNode.level)
+                ?.originalIndex || -1;
+        return {
+          parent: parentOrder < 0 ? rootPageUuid : actualTree[parentOrder].uuid,
+          parentOrder,
+        };
+      };
       if (actualTree.length > order) {
         const actualNode = actualTree[order] as BlockEntity;
         const blockUuid = actualNode.uuid;
@@ -229,27 +263,11 @@ const applyState = async (notebookPageId: string, state: Schema) => {
           .catch((e) => Promise.reject(`Failed to update block: ${e.message}`))
           .then(() => {
             if (actualNode.level !== expectedNode.level) {
-              const getParent = () => {
-                if (expectedNode.level === 1) {
-                  return { parent: rootPageUuid, index: -1 };
-                }
-                const index =
-                  order -
-                  1 -
-                  actualTree
-                    .slice(0, order)
-                    .reverse()
-                    .findIndex((node) => node.level < expectedNode.level);
-                return { parent: actualTree[index].uuid, index };
-              };
-              const { parent, index } = getParent();
-              const previousSibling =
-                index >= 0
-                  ? actualTree
-                      .slice(index, order)
-                      .reverse()
-                      .find((a) => a.level === expectedNode.level)
-                  : undefined;
+              const { parent, parentOrder } = getParent();
+              const previousSibling = actualTree
+                .slice(parentOrder >= 0 ? parentOrder : 0, order)
+                .reverse()
+                .find((a) => a.level === expectedNode.level);
               (previousSibling
                 ? window.logseq.Editor.moveBlock(
                     actualNode.uuid,
@@ -270,13 +288,7 @@ const applyState = async (notebookPageId: string, state: Schema) => {
             return Promise.resolve();
           });
       } else {
-        const parent =
-          expectedNode.level === 1
-            ? notebookPageId
-            : actualTree
-                .slice(0, order)
-                .reverse()
-                .find((node) => node.level < expectedNode.level)?.uuid || "";
+        const { parent } = getParent();
 
         return window.logseq.Editor.appendBlockInPage(
           parent,
