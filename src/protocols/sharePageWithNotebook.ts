@@ -69,7 +69,9 @@ const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
         blockGrammar,
         n.content
       );
-      const content = _content.length ? _content : String.fromCharCode(0);
+      const content = `${
+        _content.length ? _content : String.fromCharCode(0)
+      }\n`;
       const end = content.length + index;
       const blockAnnotations: Schema["annotations"] = [
         {
@@ -152,7 +154,10 @@ const applyState = async (notebookPageId: string, state: Schema) => {
   state.annotations.forEach((anno) => {
     if (anno.type === "block") {
       const currentBlock = {
-        content: state.content.slice(anno.start, anno.end).join(""),
+        content: state.content
+          .slice(anno.start, anno.end)
+          .join("")
+          .replace(/\n$/, ""),
         level: anno.attributes.level,
         annotation: {
           start: anno.start,
@@ -229,10 +234,12 @@ const applyState = async (notebookPageId: string, state: Schema) => {
                 }))
                 .reverse()
                 .concat([{ level: 0, originalIndex: -1 }])
-                .find(({ level }) => level < expectedNode.level)
-                ?.originalIndex || -1;
+                .find(({ level }) => level < expectedNode.level)?.originalIndex;
         return {
-          parent: parentOrder < 0 ? rootPageUuid : actualTree[parentOrder].uuid,
+          parent:
+            typeof parentOrder === "undefined" || parentOrder < 0
+              ? rootPageUuid
+              : actualTree[parentOrder].uuid,
           parentOrder,
         };
       };
@@ -245,7 +252,12 @@ const applyState = async (notebookPageId: string, state: Schema) => {
             if (actualNode.level !== expectedNode.level) {
               const { parent, parentOrder } = getParent();
               const previousSibling = actualTree
-                .slice(parentOrder >= 0 ? parentOrder : 0, order)
+                .slice(
+                  typeof parentOrder !== "undefined" && parentOrder >= 0
+                    ? parentOrder
+                    : 0,
+                  order
+                )
                 .reverse()
                 .find((a) => a.level === expectedNode.level);
               (previousSibling
@@ -691,10 +703,7 @@ const setupSharePageWithNotebook = () => {
       "keydown",
       bodyKeydownListener
     );
-    window.parent.document.body.removeEventListener(
-      "paste",
-      bodyPasteListener
-    );
+    window.parent.document.body.removeEventListener("paste", bodyPasteListener);
     idObserver.disconnect();
     unload();
   };
