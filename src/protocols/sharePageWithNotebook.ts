@@ -113,11 +113,20 @@ const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
 
 const flattenTree = <T extends { children?: (T | BlockUUIDTuple)[] }>(
   tree: T[]
-): Omit<T, "children">[] =>
-  tree.flatMap(({ children = [], ...t }) => [
+): T[] =>
+  tree.flatMap((t) => [
     t,
-    ...flattenTree(children.filter((c): c is T => typeof c === "object")),
+    ...flattenTree(
+      (t.children || []).filter((c): c is T => typeof c === "object")
+    ),
   ]);
+
+const updateLevel = (t: BlockEntity, level: number) => {
+  t.level = level;
+  (t.children || []).forEach(
+    (t) => !Array.isArray(t) && updateLevel(t, level + 1)
+  );
+};
 
 const isContentBlock = (b: BlockEntity) => {
   return !b.content || b.content.replace(/[a-z]+:: [^\n]+\n?/g, "");
@@ -148,7 +157,7 @@ type SamepageNode = {
 
 const applyState = async (notebookPageId: string, state: Schema) => {
   const rootPageUuid = await window.logseq.Editor.getPage(notebookPageId).then(
-    (p) => p?.uuid
+    (p) => p?.uuid || ""
   );
   const expectedTree: SamepageNode[] = [];
   state.annotations.forEach((anno) => {
@@ -229,7 +238,7 @@ const applyState = async (notebookPageId: string, state: Schema) => {
             : actualTree
                 .slice(0, order)
                 .map((node, originalIndex) => ({
-                  level: node.level,
+                  level: node.level || 1,
                   originalIndex,
                 }))
                 .reverse()
@@ -270,7 +279,7 @@ const applyState = async (notebookPageId: string, state: Schema) => {
                   })
               )
                 .then(() => {
-                  actualNode.level = expectedNode.level;
+                  updateLevel(actualNode, expectedNode.level);
                 })
                 .catch((e) =>
                   Promise.reject(`Failed to move block: ${e.message}`)
@@ -739,7 +748,10 @@ const setupSharePageWithNotebook = () => {
       bodyKeydownListener
     );
     window.parent.document.body.removeEventListener("paste", bodyPasteListener);
-    window.parent.document.body.removeEventListener("dragstart", dragEndListener);
+    window.parent.document.body.removeEventListener(
+      "dragstart",
+      dragEndListener
+    );
     idObserver.disconnect();
     unload();
   };
