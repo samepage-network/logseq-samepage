@@ -568,11 +568,13 @@ const setupSharePageWithNotebook = () => {
   const refreshState = ({
     blockUuid,
     notebookPageId,
+    changeMethod,
   }: {
     blockUuid: string;
     notebookPageId: string;
+    changeMethod: (callback: () => {}) => () => void;
   }) => {
-    refreshRef = window.logseq.DB.onBlockChanged(blockUuid, async () => {
+    refreshRef = changeMethod(async () => {
       const doc = await calculateState(notebookPageId);
       updatePage({
         notebookPageId,
@@ -692,11 +694,44 @@ const setupSharePageWithNotebook = () => {
       const notebookPageId = notebookPage?.originalName || "";
       if (isShared(notebookPageId)) {
         clearRefreshRef();
-        refreshState({ notebookPageId, blockUuid });
+        refreshState({
+          notebookPageId,
+          blockUuid,
+          changeMethod: (c) => window.logseq.DB.onBlockChanged(blockUuid, c),
+        });
       }
     }
   };
   window.parent.document.body.addEventListener("paste", bodyPasteListener);
+
+  const dragEndListener = async (e: DragEvent) => {
+    const el = e.target as HTMLElement;
+    if (el.tagName === "SPAN" && el.hasAttribute("blockid")) {
+      const blockUuid = el.getAttribute("blockid");
+      if (blockUuid) {
+        const notebookPage = await window.logseq.Editor.getBlock(
+          blockUuid
+        ).then((block) => block && window.logseq.Editor.getPage(block.page.id));
+        const notebookPageId = notebookPage?.originalName || "";
+        if (isShared(notebookPageId)) {
+          clearRefreshRef();
+          refreshState({
+            blockUuid,
+            notebookPageId,
+            changeMethod: (c) =>
+              window.logseq.DB.onChanged(({ blocks }) => {
+                if (blocks.some((b) => b.uuid === blockUuid)) {
+                  c();
+                }
+              }),
+          });
+        }
+      }
+    }
+  };
+  // for some reason, dragend doesn't fire sometimes...
+  window.parent.document.body.addEventListener("dragstart", dragEndListener);
+
   return () => {
     clearRefreshRef();
     window.parent.document.body.removeEventListener(
@@ -704,6 +739,7 @@ const setupSharePageWithNotebook = () => {
       bodyKeydownListener
     );
     window.parent.document.body.removeEventListener("paste", bodyPasteListener);
+    window.parent.document.body.removeEventListener("dragstart", dragEndListener);
     idObserver.disconnect();
     unload();
   };
