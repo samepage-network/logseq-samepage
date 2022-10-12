@@ -1,4 +1,4 @@
-import type { AppId, InitialSchema, Schema } from "samepage/types";
+import type { InitialSchema, Schema } from "samepage/types";
 import loadSharePageWithNotebook from "samepage/protocols/sharePageWithNotebook";
 import atJsonParser from "samepage/utils/atJsonParser";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
@@ -8,7 +8,6 @@ import type {
   BlockUUIDTuple,
 } from "@logseq/libs/dist/LSPlugin.user";
 import Automerge from "automerge";
-import { openDB, IDBPDatabase } from "idb";
 import dateFormat from "date-fns/format";
 //@ts-ignore Fix later, already compiles
 import blockGrammar from "../util/blockGrammar.ne";
@@ -52,15 +51,6 @@ const getSubTree = ({
     children: [],
   };
 };
-
-let db: IDBPDatabase;
-const openIdb = async () =>
-  db ||
-  (db = await openDB("samepage", 2, {
-    upgrade(db) {
-      db.createObjectStore("pages");
-    },
-  }));
 
 const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
   return flattenTree(nodes)
@@ -332,24 +322,6 @@ const setupSharePageWithNotebook = () => {
     applyState,
     calculateState: async (notebookPageId) =>
       calculateState(notebookPageId).then(({ nodes, ...atJson }) => atJson),
-    loadState: async (notebookPageId) =>
-      window.logseq.App.getCurrentGraph().then((graph) =>
-        openIdb().then((db) =>
-          db.get("pages", `${graph?.name || "null"}/${notebookPageId}`)
-        )
-      ),
-    saveState: async (notebookPageId, state) =>
-      window.logseq.App.getCurrentGraph().then((graph) =>
-        openIdb().then((db) =>
-          db.put("pages", state, `${graph?.name || "null"}/${notebookPageId}`)
-        )
-      ),
-    removeState: async (notebookPageId) =>
-      window.logseq.App.getCurrentGraph().then((graph) =>
-        openIdb().then((db) =>
-          db.delete("pages", `${graph?.name || "null"}/${notebookPageId}`)
-        )
-      ),
     overlayProps: {
       viewSharedPageProps: {
         linkNewPage: (_, title) =>
