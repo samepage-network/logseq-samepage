@@ -151,3 +151,11 @@ test(
     ],
   })
 );
+
+test(
+  "No text",
+  runTest("", {
+    content: "",
+    annotations: [],
+  })
+);

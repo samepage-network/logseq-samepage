@@ -317,7 +317,7 @@ const setupSharePageWithNotebook = () => {
   } = loadSharePageWithNotebook({
     getCurrentNotebookPageId: () =>
       logseq.Editor.getCurrentPage().then((p) =>
-        p && !("page" in p) ? p.name : ""
+        p && !("page" in p) ? p.originalName : ""
       ),
     applyState,
     calculateState: async (notebookPageId) =>
@@ -344,7 +344,7 @@ const setupSharePageWithNotebook = () => {
       },
       notificationContainerProps: {
         actions: {
-          accept: ({ app, workspace, pageUuid, title }) =>
+          accept: ({ pageUuid, title }) =>
             window.logseq.Editor.createPage(title, {}, { redirect: false })
               .then((page) =>
                 page
@@ -352,12 +352,13 @@ const setupSharePageWithNotebook = () => {
                       pageUuid,
                       notebookPageId: title,
                     }).then(() => {
-                      const todayName = dateFormat(new Date(), "MMM do, yyyy");
-                      return window.logseq.Editor.appendBlockInPage(
-                        todayName,
-                        `Accepted page [[${title}]] from ${
-                          apps[Number(app)].name
-                        } / ${workspace}`
+                      // as usual, logseq is givin trouble...
+                      return setTimeout(
+                        () =>
+                          (window.parent.location.hash = `#/page/${encodeURIComponent(
+                            title.toLowerCase()
+                          )}`),
+                        1000
                       );
                     })
                   : Promise.reject(
