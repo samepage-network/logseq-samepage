@@ -501,6 +501,7 @@ const setupSharePageWithNotebook = () => {
         },
       },
       sharedPageStatusProps: {
+        onCopy: (s) => window.parent.navigator.clipboard.writeText(s),
         getHtmlElement: async (notebookPageId) => {
           return Array.from(
             window.parent.document.querySelectorAll<HTMLHeadingElement>(
