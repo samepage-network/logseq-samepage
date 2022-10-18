@@ -54,7 +54,8 @@ div#main-content-container div[data-render*="-"] {
   // logseq commands arent idempotent -.-
   const commandsRegistered = new Set<string>();
   const { unload: unloadSamePageClient } = setupSamePageClient({
-    isAutoConnect: logseq.settings?.["auto-connect"] as boolean,
+    getSetting: (s) => (logseq.settings?.[s] as string) || "",
+    setSetting: (s, v) => logseq.updateSettings({ [s]: v }),
     app: "LogSeq",
     workspace,
     addCommand: ({ label, callback }) => {
