@@ -11,27 +11,28 @@ const renderOverlay: RenderOverlay = ({
   props = {},
   path = "body",
 }) => {
+  const parentId = id.replace(/^\d*/, "");
   if (path) {
     if (typeof path === "string") {
       if (
-        !window.parent.document.querySelector(path)?.querySelector(`#${id}`)
+        !window.parent.document.querySelector(path)?.querySelector(`#${parentId}`)
       ) {
         logseq.provideUI({
-          key: id,
+          key: parentId,
           path,
-          template: `<div id="${id}"></div>`,
+          template: `<div id="${parentId}"></div>`,
         });
       } else {
         return () => {};
       }
     } else {
-      if (!path.querySelector(`#${id}`)) {
+      if (!path.querySelector(`#${parentId}`)) {
         const renderId = v4();
         path.setAttribute(`data-render`, renderId);
         logseq.provideUI({
-          key: id,
+          key: parentId,
           path: `${path.tagName.toLowerCase()}[data-render="${renderId}"]`,
-          template: `<div id="${id}"></div>`,
+          template: `<div id="${parentId}"></div>`,
         });
       } else {
         return () => {};
@@ -39,7 +40,7 @@ const renderOverlay: RenderOverlay = ({
     }
 
     setTimeout(() => {
-      const parent = window.parent.document.getElementById(id);
+      const parent = window.parent.document.getElementById(parentId);
       if (parent) {
         const root = createRoot(parent);
         const onClose = () => {
