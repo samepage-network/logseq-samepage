@@ -1,21 +1,13 @@
 import "@logseq/libs";
 import setupSamePageClient from "samepage/protocols/setupSamePageClient";
 import defaultSettings from "samepage/utils/defaultSettings";
-import { onAppEvent } from "samepage/internal/registerAppEventListener";
-import { renderLoading } from "./components/Loading";
 import setupSharePageWithNotebook, {
   granularChanges,
 } from "./protocols/sharePageWithNotebook";
 import renderOverlay from "./components/renderOverlay";
 import type { SettingSchemaDesc } from "@logseq/libs/dist/LSPlugin";
 
-const IGNORED_LOGS = new Set([
-  "list-pages-success",
-  "load-remote-message",
-  "update-success",
-]);
-
-const main = async () => {
+const setupUserSettings = () => {
   logseq.useSettingsSchema(
     defaultSettings.map(
       (s) =>
@@ -31,29 +23,30 @@ const main = async () => {
   logseq.onSettingsChanged((_, b) => {
     granularChanges.enabled = !!b["granular-changes"];
   });
+};
 
+const setupClient = async () => {
   fetch("samepage.css")
     .then((r) => r.text())
     .then((style) =>
       logseq.provideStyle(`${style}
 
 div#main-content-container div[data-render*="-"] {
-  flex-direction: column;
+flex-direction: column;
 }
 
 .samepage-shared-page-status img {
-  margin: 0;
+margin: 0;
 }
 `)
     );
-
   const workspace = await logseq.App.getCurrentGraph().then(
     (info) => info?.name || ""
   );
 
   // logseq commands arent idempotent -.-
   const commandsRegistered = new Set<string>();
-  const { unload: unloadSamePageClient } = setupSamePageClient({
+  const { unload } = setupSamePageClient({
     getSetting: (s) => (logseq.settings?.[s] as string) || "",
     setSetting: (s, v) => logseq.updateSettings({ [s]: v }),
     app: "LogSeq",
@@ -76,24 +69,20 @@ div#main-content-container div[data-render*="-"] {
     },
     renderOverlay,
     appRoot: window.parent.document.body,
-  });
-  onAppEvent(
-    "log",
-    (evt) =>
-      !IGNORED_LOGS.has(evt.id) &&
+    onAppLog: (evt) =>
+      evt.intent !== "debug" &&
       window.logseq.UI.showMsg(
         evt.content,
         evt.intent === "info" ? "success" : evt.intent,
         { timeout: 5000 }
-      )
-  );
-  let removeLoadingCallback: (() => void) | undefined;
-  onAppEvent("connection", (evt) => {
-    if (evt.status === "PENDING")
-      renderLoading().then((c) => (removeLoadingCallback = c));
-    else removeLoadingCallback?.();
+      ),
   });
+  return unload;
+};
 
+const main = async () => {
+  setupUserSettings();
+  const unloadSamePageClient = await setupClient();
   const unloadSharePageWithNotebook = setupSharePageWithNotebook();
 
   logseq.beforeunload(async () => {

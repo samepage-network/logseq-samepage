@@ -2,16 +2,15 @@ import type { InitialSchema, Schema } from "samepage/types";
 import loadSharePageWithNotebook from "samepage/protocols/sharePageWithNotebook";
 import atJsonParser from "samepage/utils/atJsonParser";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
-import apps from "samepage/internal/apps";
 import type {
   BlockEntity,
   BlockUUIDTuple,
 } from "@logseq/libs/dist/LSPlugin.user";
 import Automerge from "automerge";
-import dateFormat from "date-fns/format";
 //@ts-ignore Fix later, already compiles
 import blockGrammar from "../util/blockGrammar.ne";
 import renderAtJson from "samepage/utils/renderAtJson";
+import { v4 } from "uuid";
 
 const toFlexRegex = (key: string): RegExp =>
   new RegExp(`^\\s*${key.replace(/([()])/g, "\\$1")}\\s*$`, "i");
@@ -344,12 +343,11 @@ const setupSharePageWithNotebook = () => {
       },
       notificationContainerProps: {
         actions: {
-          accept: ({ pageUuid, title }) =>
+          accept: ({ title }) =>
             window.logseq.Editor.createPage(title, {}, { redirect: false })
               .then((page) =>
                 page
                   ? joinPage({
-                      pageUuid,
                       notebookPageId: title,
                     }).then(() => {
                       // as usual, logseq is givin trouble...
@@ -518,8 +516,16 @@ const setupSharePageWithNotebook = () => {
             h.textContent?.toLowerCase() || ""
           ).then((p) => p?.originalName || "");
         },
-        getPath: (heading) =>
-          heading?.parentElement?.parentElement?.parentElement || null,
+        getPath: (heading) => {
+          const parent =
+            heading?.parentElement?.parentElement?.parentElement || null;
+          if (parent) {
+            const sel = v4();
+            parent.setAttribute("data-samepage-shared", sel);
+            return `div[data-samepage-shared="${sel}"]::before(1)`;
+          }
+          return null;
+        },
       },
     },
   });
