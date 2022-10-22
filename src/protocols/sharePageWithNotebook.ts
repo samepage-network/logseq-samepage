@@ -1,4 +1,4 @@
-import type { InitialSchema, Schema } from "samepage/types";
+import type { InitialSchema, Schema } from "samepage/internal/types";
 import loadSharePageWithNotebook from "samepage/protocols/sharePageWithNotebook";
 import atJsonParser from "samepage/utils/atJsonParser";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
@@ -518,7 +518,8 @@ const setupSharePageWithNotebook = () => {
         },
         getPath: (heading) => {
           const parent =
-            heading?.parentElement?.parentElement?.parentElement || null;
+            heading?.parentElement?.parentElement?.parentElement
+              ?.parentElement || null;
           if (parent) {
             const sel = v4();
             parent.setAttribute("data-samepage-shared", sel);
