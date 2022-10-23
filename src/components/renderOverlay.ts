@@ -39,8 +39,6 @@ const renderOverlay: RenderOverlay = ({
               );
             }
           });
-        } else {
-          return undefined;
         }
         logseq.provideUI({
           key: parentId,
