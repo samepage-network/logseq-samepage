@@ -32,16 +32,11 @@ const setupClient = async () => {
       logseq.provideStyle(`${style}
 
 div#main-content-container div[data-render*="-"] {
-flex-direction: column;
+  flex-direction: column;
 }
 
 .samepage-shared-page-status img {
-margin: 0;
-}
-
-.samepage-notification-container > div {
-  margin-top: 60px;
-  font-size: 16px;
+  margin: 0;
 }
 `)
     );
