@@ -5,7 +5,7 @@ import type { RenderOverlay } from "samepage/internal/types";
 
 let unmount: () => void;
 
-const BEFORE_REGEX = /::before\(([\w.]+)\)$/;
+const BEFORE_REGEX = /::before\(([\w.-]+)\)$/;
 
 const renderOverlay: RenderOverlay = ({
   id = v4(),

@@ -38,6 +38,11 @@ flex-direction: column;
 .samepage-shared-page-status img {
 margin: 0;
 }
+
+.samepage-notification-container > div {
+  margin-top: 60px;
+  font-size: 16px;
+}
 `)
     );
   const workspace = await logseq.App.getCurrentGraph().then(
