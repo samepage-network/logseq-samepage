@@ -12,45 +12,6 @@ import blockGrammar from "../util/blockGrammar.ne";
 import renderAtJson from "samepage/utils/renderAtJson";
 import { v4 } from "uuid";
 
-const toFlexRegex = (key: string): RegExp =>
-  new RegExp(`^\\s*${key.replace(/([()])/g, "\\$1")}\\s*$`, "i");
-
-const getSettingValueFromTree = ({
-  tree,
-  key,
-}: {
-  tree: BlockEntity[];
-  key: string;
-}): string => {
-  const node = tree.find((s) => toFlexRegex(key).test(s.content.trim()));
-  const value = node?.children?.[0]
-    ? (node?.children?.[0] as BlockEntity).content
-    : "";
-  return value;
-};
-
-const getSubTree = ({
-  key,
-  tree = [],
-}: {
-  key: string;
-  tree?: BlockEntity[];
-}): BlockEntity => {
-  const node = tree.find((s) => toFlexRegex(key).test(s.content.trim()));
-  if (node) return node;
-  return {
-    uuid: "",
-    id: 0,
-    left: { id: 0 },
-    format: "markdown",
-    page: { id: 0 },
-    parent: { id: 0 },
-    unordered: false,
-    content: "",
-    children: [],
-  };
-};
-
 const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
   return flattenTree(nodes)
     .map((n) => (index: number) => {
@@ -207,9 +168,19 @@ const applyState = async (notebookPageId: string, state: Schema) => {
           prefix: "[",
           suffix: `](${href})`,
         }),
-        image: ({ src }) => ({
+        image: ({ src }, content) => ({
           prefix: "![",
           suffix: `](${src})`,
+          replace: content === String.fromCharCode(0),
+        }),
+        reference: ({ notebookPageId, notebookUuid }, content) => ({
+          prefix: "((",
+          suffix: `${
+            notebookUuid === window.logseq.settings["uuid"]
+              ? notebookPageId
+              : `${notebookUuid}:${notebookPageId}`
+          }))`,
+          replace: content === String.fromCharCode(0),
         }),
       },
     });
@@ -305,108 +276,85 @@ const applyState = async (notebookPageId: string, state: Schema) => {
 export let granularChanges = { enabled: false };
 
 const setupSharePageWithNotebook = () => {
-  const {
-    unload,
-    updatePage,
-    joinPage,
-    rejectPage,
-    isShared,
-    insertContent,
-    deleteContent,
-  } = loadSharePageWithNotebook({
-    getCurrentNotebookPageId: () =>
-      logseq.Editor.getCurrentPage().then((p) =>
-        p && !("page" in p) ? p.originalName : ""
-      ),
-    applyState,
-    calculateState: async (notebookPageId) =>
-      calculateState(notebookPageId).then(({ nodes, ...atJson }) => atJson),
-    overlayProps: {
-      viewSharedPageProps: {
-        linkNewPage: (_, title) =>
-          window.logseq.Editor.getPage(title)
-            .then(
-              (page) =>
-                page ||
-                window.logseq.Editor.createPage(title, {}, { redirect: false })
-            )
-            .then(() => title),
-        onLinkClick: (notebookPageId, e) => {
-          if (e.shiftKey) {
-            logseq.Editor.openInRightSidebar(notebookPageId);
-          } else {
-            window.location.hash = `#/page/${encodeURIComponent(
-              notebookPageId
+  const { unload, updatePage, isShared, insertContent, deleteContent } =
+    loadSharePageWithNotebook({
+      getCurrentNotebookPageId: () =>
+        logseq.Editor.getCurrentPage().then((p) =>
+          p && !("page" in p) ? p.originalName : ""
+        ),
+      applyState,
+      createPage: (title) =>
+        window.logseq.Editor.createPage(title, {}, { redirect: false }),
+      deletePage: (title) => window.logseq.Editor.deletePage(title),
+      openPage: (title) => {
+        // as usual, logseq is givin trouble...
+        return new Promise<void>((resolve) =>
+          setTimeout(() => {
+            window.parent.location.hash = `#/page/${encodeURIComponent(
+              title.toLowerCase()
             )}`;
-          }
-        },
+            resolve();
+          }, 1000)
+        );
       },
-      notificationContainerProps: {
-        actions: {
-          accept: ({ title }) =>
-            window.logseq.Editor.createPage(title, {}, { redirect: false })
-              .then((page) =>
-                page
-                  ? joinPage({
-                      notebookPageId: title,
-                    }).then(() => {
-                      // as usual, logseq is givin trouble...
-                      return setTimeout(
-                        () =>
-                          (window.parent.location.hash = `#/page/${encodeURIComponent(
-                            title.toLowerCase()
-                          )}`),
-                        1000
-                      );
-                    })
-                  : Promise.reject(
-                      `Failed to create a page with title ${title}`
-                    )
+      calculateState: async (notebookPageId) =>
+        calculateState(notebookPageId).then(({ nodes, ...atJson }) => atJson),
+      overlayProps: {
+        viewSharedPageProps: {
+          linkNewPage: (_, title) =>
+            window.logseq.Editor.getPage(title)
+              .then(
+                (page) =>
+                  page ||
+                  window.logseq.Editor.createPage(
+                    title,
+                    {},
+                    { redirect: false }
+                  )
               )
-
-              .then(() => Promise.resolve())
-              .catch((e) => {
-                window.logseq.Editor.deletePage(title);
-                return Promise.reject(e);
-              }),
-          reject: async ({ title }) =>
-            rejectPage({
-              notebookPageId: title,
-            }),
+              .then(() => title),
+          onLinkClick: (notebookPageId, e) => {
+            if (e.shiftKey) {
+              logseq.Editor.openInRightSidebar(notebookPageId);
+            } else {
+              window.location.hash = `#/page/${encodeURIComponent(
+                notebookPageId
+              )}`;
+            }
+          },
         },
-        path: `.cp__header .r.flex::before(0)`,
+        sharedPageStatusProps: {
+          onCopy: (s) => window.parent.navigator.clipboard.writeText(s),
+          getHtmlElement: async (notebookPageId) => {
+            return Array.from(
+              window.parent.document.querySelectorAll<HTMLHeadingElement>(
+                "h1.title"
+              )
+            ).find(
+              (h) =>
+                h.textContent?.toLowerCase() === notebookPageId.toLowerCase()
+            );
+          },
+          selector: "h1.title",
+          getNotebookPageId: async (h) => {
+            return window.logseq.Editor.getPage(
+              h.textContent?.toLowerCase() || ""
+            ).then((p) => p?.originalName || "");
+          },
+          getPath: (heading) => {
+            const parent =
+              heading?.parentElement?.parentElement?.parentElement
+                ?.parentElement || null;
+            if (parent) {
+              const sel = v4();
+              parent.setAttribute("data-samepage-shared", sel);
+              return `div[data-samepage-shared="${sel}"]::before(1)`;
+            }
+            return null;
+          },
+        },
       },
-      sharedPageStatusProps: {
-        onCopy: (s) => window.parent.navigator.clipboard.writeText(s),
-        getHtmlElement: async (notebookPageId) => {
-          return Array.from(
-            window.parent.document.querySelectorAll<HTMLHeadingElement>(
-              "h1.title"
-            )
-          ).find(
-            (h) => h.textContent?.toLowerCase() === notebookPageId.toLowerCase()
-          );
-        },
-        selector: "h1.title",
-        getNotebookPageId: async (h) => {
-          return window.logseq.Editor.getPage(
-            h.textContent?.toLowerCase() || ""
-          ).then((p) => p?.originalName || "");
-        },
-        getPath: (heading) => {
-          const parent =
-            heading?.parentElement?.parentElement?.parentElement
-              ?.parentElement || null;
-          if (parent) {
-            const sel = v4();
-            parent.setAttribute("data-samepage-shared", sel);
-            return `div[data-samepage-shared="${sel}"]::before(1)`;
-          }
-          return null;
-        },
-      },
-    },
-  });
+    });
 
   const idObserver = createHTMLObserver({
     selector: "a.page-property-key",

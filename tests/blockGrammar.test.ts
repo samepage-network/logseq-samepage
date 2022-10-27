@@ -3,6 +3,21 @@ import blockGrammar from "../src/util/blockGrammar";
 import type { InitialSchema } from "samepage/internal/types";
 import atJsonParser from "samepage/utils/atJsonParser";
 import { test, expect } from "@playwright/test";
+import { v4 } from "uuid";
+
+const notebookUuid = v4();
+// @ts-ignore
+global.localStorage = {
+  getItem: () => JSON.stringify({ uuid: notebookUuid }),
+};
+global.window = {
+  // @ts-ignore
+  logseq: {
+    settings: {
+      uuid: notebookUuid,
+    },
+  },
+};
 
 const runTest = (md: string, expected: InitialSchema) => () => {
   const output = atJsonParser(blockGrammar, md);
@@ -159,3 +174,37 @@ test(
     annotations: [],
   })
 );
+
+test("A normal block reference", () => {
+  runTest("A block ((reference)) to content", {
+    content: `A block ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 8,
+        end: 9,
+        type: "reference",
+        attributes: {
+          notebookPageId: "reference",
+          notebookUuid,
+        },
+      },
+    ],
+  })();
+});
+
+test("A cross app block reference", () => {
+  runTest("A ((abcd1234:reference)) to content", {
+    content: `A ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 2,
+        end: 3,
+        type: "reference",
+        attributes: {
+          notebookPageId: "reference",
+          notebookUuid: "abcd1234",
+        },
+      },
+    ],
+  })();
+});

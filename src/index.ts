@@ -4,6 +4,7 @@ import defaultSettings from "samepage/utils/defaultSettings";
 import setupSharePageWithNotebook, {
   granularChanges,
 } from "./protocols/sharePageWithNotebook";
+import setupNotebookQuerying from "./protocols/notebookQuerying";
 import renderOverlay from "./components/renderOverlay";
 import type { SettingSchemaDesc } from "@logseq/libs/dist/LSPlugin";
 
@@ -76,20 +77,30 @@ div#main-content-container div[data-render*="-"] {
         evt.intent === "info" ? "success" : evt.intent,
         { timeout: 5000 }
       ),
+    notificationContainerPath: `.cp__header .r.flex::before(0)`,
   });
   return unload;
 };
 
+const setupProtocols = () => {
+  const unloadSharePageWithNotebook = setupSharePageWithNotebook();
+  const unloadNotebookQuerying = setupNotebookQuerying();
+  return () => {
+    unloadNotebookQuerying();
+    unloadSharePageWithNotebook();
+  }
+}
+
 const main = async () => {
   setupUserSettings();
   const unloadSamePageClient = await setupClient();
-  const unloadSharePageWithNotebook = setupSharePageWithNotebook();
+  const unloadProtocols = setupProtocols();
 
   logseq.beforeunload(async () => {
     Array.from(
       window.parent.document.head.querySelectorAll(`style[data-ref=samepage]`)
     ).forEach((s) => s.remove());
-    unloadSharePageWithNotebook();
+    unloadProtocols();
     unloadSamePageClient();
   });
 };
