@@ -1,6 +1,7 @@
 import atJsonParser from "samepage/utils/atJsonParser";
 import blockGrammar from "../util/blockGrammar";
 import setupNotebookQuerying from "samepage/protocols/notebookQuerying";
+import createHTMLObserver from "samepage/utils/createHTMLObserver";
 
 const setup = () => {
   const { unload, query } = setupNotebookQuerying({
@@ -21,9 +22,16 @@ const setup = () => {
       );
     },
   });
-  // how to show it?
+  const refObserver = createHTMLObserver({
+    selector: "div.content-block",
+    callback: (el) => {
+      const realContentContainer = (el as HTMLDivElement).querySelector("span");
+      
+    },
+  });
   return () => {
     unload();
+    refObserver.disconnect();
   };
 };
 
