@@ -1,4 +1,5 @@
 import atJsonParser from "samepage/utils/atJsonParser";
+// @ts-ignore for now
 import blockGrammar from "../util/blockGrammar";
 import setupNotebookQuerying from "samepage/protocols/notebookQuerying";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
@@ -26,7 +27,7 @@ const setup = () => {
     selector: "div.content-block",
     callback: (el) => {
       const realContentContainer = (el as HTMLDivElement).querySelector("span");
-      
+
     },
   });
   return () => {
