@@ -1,6 +1,6 @@
 import atJsonParser from "samepage/utils/atJsonParser";
 // @ts-ignore for now
-import blockGrammar from "../util/blockGrammar";
+import blockGrammar from "../util/blockGrammar.ne";
 import setupNotebookQuerying from "samepage/protocols/notebookQuerying";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
 
