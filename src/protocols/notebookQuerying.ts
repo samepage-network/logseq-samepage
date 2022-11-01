@@ -1,11 +1,12 @@
 import atJsonParser from "samepage/utils/atJsonParser";
 // @ts-ignore for now
-import blockGrammar from "../util/blockGrammar.ne";
+import blockGrammar from "../utils/blockGrammar.ne";
 import setupNotebookQuerying from "samepage/protocols/notebookQuerying";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
+import { render as referenceRender } from "../components/ExternalNotebookReference";
 
 const setup = () => {
-  const { unload, query } = setupNotebookQuerying({
+  const { unload } = setupNotebookQuerying({
     onQuery: async (notebookPageId) => {
       const content = await logseq.Editor.getBlock(notebookPageId).then(
         (b) => b?.content || null
@@ -14,7 +15,7 @@ const setup = () => {
     },
     onQueryResponse: async ({ data, request }) => {
       document.body.dispatchEvent(
-        new CustomEvent("samepage:reference", {
+        new CustomEvent("samepage:reference:response", {
           detail: {
             request,
             data,
@@ -23,12 +24,9 @@ const setup = () => {
       );
     },
   });
-  const refObserver = createHTMLObserver({
-    selector: "div.content-block",
-    callback: (el) => {
-      const realContentContainer = (el as HTMLDivElement).querySelector("span");
-
-    },
+  const refObserver = createHTMLObserver<HTMLSpanElement>({
+    selector: `span[title="Block ref invalid"]`,
+    callback: referenceRender,
   });
   return () => {
     unload();

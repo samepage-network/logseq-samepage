@@ -8,7 +8,7 @@ import type {
 } from "@logseq/libs/dist/LSPlugin.user";
 import Automerge from "automerge";
 //@ts-ignore Fix later, already compiles
-import blockGrammar from "../util/blockGrammar.ne";
+import blockGrammar from "../utils/blockGrammar.ne";
 import renderAtJson from "samepage/utils/renderAtJson";
 import { v4 } from "uuid";
 

@@ -3,5 +3,5 @@ node_modules
 dist
 dist-ssr
 *.local
-src/util/blockGrammar.ts
+src/utils/blockGrammar.ts
 test.json
