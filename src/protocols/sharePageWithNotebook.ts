@@ -297,6 +297,7 @@ const setupSharePageWithNotebook = () => {
           }, 1000)
         );
       },
+      doesPageExist: (title) => logseq.Editor.getPage(title).then((p) => !!p),
       calculateState: async (notebookPageId) =>
         calculateState(notebookPageId).then(({ nodes, ...atJson }) => atJson),
       overlayProps: {
