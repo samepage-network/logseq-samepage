@@ -3,8 +3,6 @@ import { createRoot } from "react-dom/client";
 import { v4 } from "uuid";
 import type { RenderOverlay } from "samepage/internal/types";
 
-let unmount: () => void;
-
 const BEFORE_REGEX = /::before\(([\w.-]+)\)$/;
 
 const renderOverlay: RenderOverlay = ({
@@ -13,6 +11,7 @@ const renderOverlay: RenderOverlay = ({
   props = {},
   path = "body",
 }) => {
+  let unmount: () => void;
   const parentId = id.replace(/^\d*/, "");
   if (path) {
     if (typeof path === "string") {
