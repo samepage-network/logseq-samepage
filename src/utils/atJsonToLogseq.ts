@@ -30,15 +30,22 @@ const atJsonToLogseq = (state: InitialSchema) => {
         suffix: `](${src})`,
         replace: content === String.fromCharCode(0),
       }),
-      reference: ({ notebookPageId, notebookUuid }, content) => ({
-        prefix: "((",
-        suffix: `${
-          notebookUuid === window.logseq.settings["uuid"]
-            ? notebookPageId
-            : `${notebookUuid}:${notebookPageId}`
-        }))`,
-        replace: content === String.fromCharCode(0),
-      }),
+      reference: ({ notebookPageId, notebookUuid }, content) => {
+        const replace = content === String.fromCharCode(0);
+        return notebookUuid === window.logseq.settings["uuid"]
+          ? {
+              prefix: replace ? "" : "[",
+              suffix: `${replace ? "" : "]("}((${notebookPageId}))${
+                replace ? "" : ")"
+              }`,
+              replace,
+            }
+          : {
+              prefix: "",
+              suffix: `{{renderer samepage-reference,${notebookUuid}:${notebookPageId}}}`,
+              replace,
+            };
+      },
     },
   });
 };

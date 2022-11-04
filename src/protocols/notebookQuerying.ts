@@ -3,9 +3,11 @@ import atJsonParser from "samepage/utils/atJsonParser";
 import blockGrammar from "../utils/blockGrammar.ne";
 import setupNotebookQuerying from "samepage/protocols/notebookQuerying";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
-import { render as referenceRender } from "../components/ExternalNotebookReference";
+import ExternalNotebookReference from "../components/ExternalNotebookReference";
+import renderOverlay from "../components/renderOverlay";
 
 const setup = () => {
+  const unloads = new Set<() => void>();
   const { unload } = setupNotebookQuerying({
     onQuery: async (notebookPageId) => {
       const content = await logseq.Editor.getBlock(notebookPageId).then(
@@ -24,13 +26,26 @@ const setup = () => {
       );
     },
   });
-  const refObserver = createHTMLObserver<HTMLSpanElement>({
-    selector: `span[title="Block ref invalid"]`,
-    callback: referenceRender,
+  logseq.App.onMacroRendererSlotted((e) => {
+    const { slot, payload } = e;
+    const [method, ...rest] = payload.arguments;
+    if (method === "samepage-reference") {
+      const [notebookUuid, notebookPageId] = rest.join(",").split(":");
+      const unmount = renderOverlay({
+        Overlay: ExternalNotebookReference,
+        props: { notebookPageId, notebookUuid },
+        path: `div#${slot}`,
+      });
+      if (unmount)
+        unloads.add(function unmountUnloader() {
+          unloads.delete(unmountUnloader);
+          unmount();
+        });
+    }
   });
   return () => {
+    unloads.forEach(u => u());
     unload();
-    refObserver.disconnect();
   };
 };
 

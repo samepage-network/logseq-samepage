@@ -1,9 +1,10 @@
 // TODO make this test friendly - https://github.com/microsoft/playwright/issues/17852
-import blockGrammar from "../src/util/blockGrammar";
+import blockGrammar from "../src/utils/blockGrammar";
 import type { InitialSchema } from "samepage/internal/types";
 import atJsonParser from "samepage/utils/atJsonParser";
 import { test, expect } from "@playwright/test";
 import { v4 } from "uuid";
+import lexer from "../src/utils/blockLexer";
 
 const notebookUuid = v4();
 // @ts-ignore
@@ -19,7 +20,15 @@ global.window = {
   },
 };
 
-const runTest = (md: string, expected: InitialSchema) => () => {
+const runTest = (md: string, expected: InitialSchema, debug?: true) => () => {
+  if (debug) {
+    const buffer = lexer.reset(md);
+    let token = buffer.next();
+    while (token) {
+      console.log(token);
+      token = buffer.next();
+    }
+  }
   const output = atJsonParser(blockGrammar, md);
   expect(output).toBeTruthy();
   expect(output.content).toEqual(expected.content);
@@ -193,7 +202,7 @@ test("A normal block reference", () => {
 });
 
 test("A cross app block reference", () => {
-  runTest("A ((abcd1234:reference)) to content", {
+  runTest("A {{renderer samepage-reference,abcd1234:reference}} to content", {
     content: `A ${String.fromCharCode(0)} to content`,
     annotations: [
       {
@@ -206,5 +215,19 @@ test("A cross app block reference", () => {
         },
       },
     ],
+  })();
+});
+
+test("Regular text with left braces in it", () => {
+  runTest("Regular {{ text", {
+    content: `Regular {{ text`,
+    annotations: [],
+  })();
+});
+
+test("Parse a macro", () => {
+  runTest("Regular {{macro}} text", {
+    content: `Regular {{macro}} text`,
+    annotations: [],
   })();
 });

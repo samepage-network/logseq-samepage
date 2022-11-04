@@ -26,13 +26,14 @@ const ExternalNotebookReference = ({
     },
     [notebookPageId, notebookUuid]
   );
+  const blockid = `${notebookUuid}:${notebookPageId}`;
   useEffect(() => {
     apiClient<{
       found: boolean;
       data: InitialSchema;
     }>({
       method: "query",
-      request: `${notebookUuid}:${notebookPageId}`,
+      request: blockid,
     }).then((e) => {
       const { found, data } = e;
       const newData = found
@@ -69,11 +70,11 @@ const ExternalNotebookReference = ({
       >
         <span className="block-ref">
           <div
-            id="block-content-635ad41a-9a67-4d95-8dd3-4c07892b7025"
+            id={`block-content-${blockid}`}
             // @ts-ignore idk they include it
-            blockid="635ad41a-9a67-4d95-8dd3-4c07892b7025"
+            blockid={blockid}
             data-type="default"
-            class="block-content inline"
+            className="block-content inline"
             style={{ width: "100%" }}
           >
             <div className="flex flex-row justify-between block-content-inner">
@@ -86,22 +87,6 @@ const ExternalNotebookReference = ({
       </div>
     </div>
   );
-};
-
-export const render = (s: HTMLSpanElement) => {
-  const text = s.innerText.replace(/^\(\(/, "").replace(/\)\)$/, "");
-  if (text) {
-    const [notebookUuid, notebookPageId] = text.split(":");
-    if (notebookPageId) {
-      ReactDOM.render(
-        <ExternalNotebookReference
-          notebookUuid={notebookUuid}
-          notebookPageId={notebookPageId}
-        />,
-        s
-      );
-    }
-  }
 };
 
 export default ExternalNotebookReference;
