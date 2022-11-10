@@ -210,6 +210,10 @@ const applyState = async (notebookPageId: string, state: Schema) => {
               ? rootPageUuid
               : actualTree[parentOrder].uuid,
           parentOrder,
+          level:
+            typeof parentOrder === "undefined" || parentOrder < 0
+              ? 0
+              : actualTree[parentOrder].level || 0,
         };
       };
       if (actualTree.length > order) {
@@ -249,13 +253,21 @@ const applyState = async (notebookPageId: string, state: Schema) => {
             return Promise.resolve();
           });
       } else {
-        const { parent } = getParent();
+        const { parent, level } = getParent();
 
         return window.logseq.Editor.appendBlockInPage(
           parent,
           expectedNode.content
         )
-          .then(() => Promise.resolve())
+          .then(async (b) => {
+            // this b has no level
+            if (b) {
+              if (b) {
+                b.level = level + 1;
+                actualTree.push(b);
+              }
+            }
+          })
           .catch((e) => Promise.reject(`Failed to append block: ${e.message}`));
       }
     })
