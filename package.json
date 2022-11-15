@@ -10,18 +10,22 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dvargas92495/logseq-samepage.git"
+    "url": "git+https://github.com/samepage-network/logseq-samepage.git"
   },
   "keywords": [
     "LogSeq",
     "SamePage"
   ],
-  "author": "Vargas <support@samepage.network>",
+  "author": {
+    "name": "SamePage",
+    "email": "support@samepage.network",
+    "url": "https://samepage.network"
+  },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/dvargas92495/logseq-samepage/issues"
+    "url": "https://github.com/samepage-network/logseq-samepage/issues"
   },
-  "homepage": "https://github.com/dvargas92495/logseq-samepage#readme",
+  "homepage": "https://github.com/samepage-network/logseq-samepage#readme",
   "logseq": {
     "id": "samepage",
     "logo": "./logo.svg",
@@ -31,7 +35,7 @@
     "@logseq/libs": "^0.0.6",
     "date-fns": "^2.29.2",
     "idb": "^7.0.2",
-    "samepage": "^0.28.5"
+    "samepage": "^0.29.4"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.32.0",
