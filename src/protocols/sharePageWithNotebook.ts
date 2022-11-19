@@ -285,8 +285,6 @@ const applyState = async (notebookPageId: string, state: Schema) => {
   return promises.reduce((p, c) => p.then(c), Promise.resolve<unknown>(""));
 };
 
-export let granularChanges = { enabled: false };
-
 const setupSharePageWithNotebook = () => {
   const { unload, updatePage, isShared, insertContent, deleteContent } =
     loadSharePageWithNotebook({
@@ -361,7 +359,7 @@ const setupSharePageWithNotebook = () => {
             if (parent) {
               const sel = v4();
               parent.setAttribute("data-samepage-shared", sel);
-              return `div[data-samepage-shared="${sel}"]::before(1)`;
+              return `div[data-samepage-shared="${sel}"] h1.ls-page-title`;
             }
             return null;
           },
@@ -440,69 +438,21 @@ const setupSharePageWithNotebook = () => {
       );
       const notebookPageId = notebookPage?.originalName || "";
       if (isShared(notebookPageId)) {
-        const { selectionStart, selectionEnd } = el as HTMLTextAreaElement;
         clearRefreshRef();
-        calculateState(notebookPageId).then(({ nodes, annotations }) => {
-          const getBlockAnnotationStart = () => {
-            const index = nodes.map((n) => n.uuid).indexOf(blockUuid);
-            return index >= 0
-              ? annotations.filter((b) => b.type === "block")[index]?.start || 0
-              : 0;
-          };
-
-          if (granularChanges.enabled && /^[a-zA-Z0-9 ]$/.test(e.key)) {
-            const index =
-              Math.min(selectionStart, selectionEnd) +
-              getBlockAnnotationStart();
-            (selectionStart !== selectionEnd
-              ? deleteContent({
-                  notebookPageId,
-                  index,
-                  count: Math.abs(selectionEnd - selectionStart),
-                })
-              : Promise.resolve()
-            ).then(() =>
-              insertContent({
-                notebookPageId,
-                content: e.key,
-                index,
-              })
-            );
-          } else if (granularChanges.enabled && /^Backspace$/.test(e.key)) {
-            const index =
-              Math.min(selectionStart, selectionEnd) +
-              getBlockAnnotationStart();
-            deleteContent({
-              notebookPageId,
-              index: selectionEnd === selectionStart ? index - 1 : index,
-              count:
-                selectionEnd === selectionStart
-                  ? 1
-                  : Math.abs(selectionEnd - selectionStart),
-            });
-          } else {
-            refreshRef = window.logseq.DB.onBlockChanged(
-              blockUuid,
-              async () => {
-                const doc = await calculateState(notebookPageId);
-                updatePage({
-                  notebookPageId,
-                  label: `Refresh`,
-                  callback: (oldDoc) => {
-                    clearRefreshRef();
-                    oldDoc.content.deleteAt?.(0, oldDoc.content.length);
-                    oldDoc.content.insertAt?.(
-                      0,
-                      ...new Automerge.Text(doc.content)
-                    );
-                    if (!oldDoc.annotations) oldDoc.annotations = [];
-                    oldDoc.annotations.splice(0, oldDoc.annotations.length);
-                    doc.annotations.forEach((a) => oldDoc.annotations.push(a));
-                  },
-                });
-              }
-            );
-          }
+        refreshRef = window.logseq.DB.onBlockChanged(blockUuid, async () => {
+          const doc = await calculateState(notebookPageId);
+          updatePage({
+            notebookPageId,
+            label: `Refresh`,
+            callback: (oldDoc) => {
+              clearRefreshRef();
+              oldDoc.content.deleteAt?.(0, oldDoc.content.length);
+              oldDoc.content.insertAt?.(0, ...new Automerge.Text(doc.content));
+              if (!oldDoc.annotations) oldDoc.annotations = [];
+              oldDoc.annotations.splice(0, oldDoc.annotations.length);
+              doc.annotations.forEach((a) => oldDoc.annotations.push(a));
+            },
+          });
         });
       }
     }

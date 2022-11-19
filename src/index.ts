@@ -1,9 +1,7 @@
 import "@logseq/libs";
 import setupSamePageClient from "samepage/protocols/setupSamePageClient";
 import defaultSettings from "samepage/utils/defaultSettings";
-import setupSharePageWithNotebook, {
-  granularChanges,
-} from "./protocols/sharePageWithNotebook";
+import setupSharePageWithNotebook from "./protocols/sharePageWithNotebook";
 import setupNotebookQuerying from "./protocols/notebookQuerying";
 import renderOverlay from "./components/renderOverlay";
 import type { SettingSchemaDesc } from "@logseq/libs/dist/LSPlugin";
@@ -21,9 +19,6 @@ const setupUserSettings = () => {
         } as SettingSchemaDesc)
     )
   );
-  logseq.onSettingsChanged((_, b) => {
-    granularChanges.enabled = !!b["granular-changes"];
-  });
 };
 
 const setupClient = async () => {
@@ -38,6 +33,25 @@ div#main-content-container div[data-render*="-"] {
 
 .samepage-shared-page-status img {
   margin: 0;
+}
+
+span.samepage-shared-page-status {
+  margin-bottom: 0;
+  margin-top: 4px;
+  background: var(--ls-secondary-background-color);
+}
+
+body .ls-block {
+  line-height: 1.5;
+}
+
+div[data-samepage-shared*="-"] h1.ls-page-title {
+  margin-bottom: 0;
+}
+
+h1 {
+  margin: 0;
+  font-size: inherit;
 }
 `)
     );
@@ -88,8 +102,8 @@ const setupProtocols = () => {
   return () => {
     unloadNotebookQuerying();
     unloadSharePageWithNotebook();
-  }
-}
+  };
+};
 
 const main = async () => {
   setupUserSettings();
