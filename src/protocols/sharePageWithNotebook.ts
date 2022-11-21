@@ -395,7 +395,9 @@ const setupSharePageWithNotebook = () => {
     blockUuid,
     notebookPageId,
     changeMethod,
+    label,
   }: {
+    label: string;
     blockUuid: string;
     notebookPageId: string;
     changeMethod: (callback: () => {}) => () => void;
@@ -404,7 +406,7 @@ const setupSharePageWithNotebook = () => {
       const doc = await calculateState(notebookPageId);
       updatePage({
         notebookPageId,
-        label: `Refresh`,
+        label,
         callback: (oldDoc) => {
           clearRefreshRef();
           oldDoc.content.deleteAt?.(0, oldDoc.content.length);
@@ -439,20 +441,11 @@ const setupSharePageWithNotebook = () => {
       const notebookPageId = notebookPage?.originalName || "";
       if (isShared(notebookPageId)) {
         clearRefreshRef();
-        refreshRef = window.logseq.DB.onBlockChanged(blockUuid, async () => {
-          const doc = await calculateState(notebookPageId);
-          updatePage({
-            notebookPageId,
-            label: `Refresh`,
-            callback: (oldDoc) => {
-              clearRefreshRef();
-              oldDoc.content.deleteAt?.(0, oldDoc.content.length);
-              oldDoc.content.insertAt?.(0, ...new Automerge.Text(doc.content));
-              if (!oldDoc.annotations) oldDoc.annotations = [];
-              oldDoc.annotations.splice(0, oldDoc.annotations.length);
-              doc.annotations.forEach((a) => oldDoc.annotations.push(a));
-            },
-          });
+        refreshState({
+          notebookPageId,
+          label: `Key Presses - ${e.key}`,
+          changeMethod: (c) => window.logseq.DB.onBlockChanged(blockUuid, c),
+          blockUuid,
         });
       }
     }
@@ -473,6 +466,7 @@ const setupSharePageWithNotebook = () => {
       if (isShared(notebookPageId)) {
         clearRefreshRef();
         refreshState({
+          label: `Paste`,
           notebookPageId,
           blockUuid,
           changeMethod: (c) => window.logseq.DB.onBlockChanged(blockUuid, c),
@@ -494,6 +488,7 @@ const setupSharePageWithNotebook = () => {
         if (isShared(notebookPageId)) {
           clearRefreshRef();
           refreshState({
+            label: `Drag Block`,
             blockUuid,
             notebookPageId,
             changeMethod: (c) =>
