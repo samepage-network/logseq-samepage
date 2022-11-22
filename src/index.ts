@@ -53,6 +53,10 @@ h1 {
   margin: 0;
   font-size: inherit;
 }
+
+.text-black p {
+  color: #000000;
+}
 `)
     );
   const workspace = await logseq.App.getCurrentGraph().then(

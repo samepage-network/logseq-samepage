@@ -12,6 +12,10 @@ import blockGrammar from "../utils/blockGrammar.ne";
 import renderAtJson from "samepage/utils/renderAtJson";
 import { v4 } from "uuid";
 
+const UUID_REGEX =
+  /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i;
+const isBlock = (notebookPageId: string) => UUID_REGEX.test(notebookPageId);
+
 const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
   return flattenTree(nodes)
     .map((n) => (index: number) => {
@@ -78,15 +82,24 @@ const updateLevel = (t: BlockEntity, level: number) => {
   );
 };
 
-const isContentBlock = (b: BlockEntity) => {
-  return !b.content || b.content.replace(/[a-z]+:: [^\n]+\n?/g, "");
+const isContentBlock = (
+  b: BlockEntity | null | BlockUUIDTuple
+): b is BlockEntity => {
+  return (
+    !!b &&
+    !Array.isArray(b) &&
+    (!b.content || !!b.content.replace(/[a-z]+:: [^\n]+\n?/g, ""))
+  );
 };
 
 const calculateState = async (notebookPageId: string) => {
   const nodes = (
-    await window.logseq.Editor.getPageBlocksTree(notebookPageId)
+    await (isBlock(notebookPageId)
+      ? window.logseq.Editor.getBlock(notebookPageId, {
+          includeChildren: true,
+        }).then((b) => (b && b.children) || [])
+      : window.logseq.Editor.getPageBlocksTree(notebookPageId))
   ).filter(isContentBlock);
-
   return {
     ...toAtJson({
       nodes,
@@ -106,9 +119,11 @@ type SamepageNode = {
 };
 
 const applyState = async (notebookPageId: string, state: Schema) => {
-  const rootPageUuid = await window.logseq.Editor.getPage(notebookPageId).then(
-    (p) => p?.uuid || ""
-  );
+  const rootPageUuid = UUID_REGEX.test(notebookPageId)
+    ? notebookPageId
+    : await window.logseq.Editor.getPage(notebookPageId).then(
+        (p) => p?.uuid || ""
+      );
   const expectedTree: SamepageNode[] = [];
   state.annotations.forEach((anno) => {
     if (anno.type === "block") {
@@ -185,8 +200,11 @@ const applyState = async (notebookPageId: string, state: Schema) => {
       },
     });
   });
-  const actualTree = await window.logseq.Editor.getPageBlocksTree(
-    notebookPageId
+  const actualTree = await (isBlock(notebookPageId)
+    ? window.logseq.Editor.getBlock(notebookPageId, {
+        includeChildren: true,
+      }).then((b) => b?.children || [])
+    : window.logseq.Editor.getPageBlocksTree(notebookPageId)
   ).then((tree = []) => flattenTree(tree.filter(isContentBlock)));
 
   const promises = expectedTree
@@ -220,7 +238,9 @@ const applyState = async (notebookPageId: string, state: Schema) => {
         const actualNode = actualTree[order] as BlockEntity;
         const blockUuid = actualNode.uuid;
         return window.logseq.Editor.updateBlock(blockUuid, expectedNode.content)
-          .catch((e) => Promise.reject(`Failed to update block: ${e.message}`))
+          .catch((e) =>
+            Promise.reject(new Error(`Failed to update block: ${e.message}`))
+          )
           .then(() => {
             if (actualNode.level !== expectedNode.level) {
               const { parent, parentOrder } = getParent();
@@ -246,7 +266,9 @@ const applyState = async (notebookPageId: string, state: Schema) => {
                   updateLevel(actualNode, expectedNode.level);
                 })
                 .catch((e) =>
-                  Promise.reject(`Failed to move block: ${e.message}`)
+                  Promise.reject(
+                    new Error(`Failed to move block: ${e.message}`)
+                  )
                 );
             }
             actualNode.content = expectedNode.content;
@@ -268,7 +290,9 @@ const applyState = async (notebookPageId: string, state: Schema) => {
               }
             }
           })
-          .catch((e) => Promise.reject(`Failed to append block: ${e.message}`));
+          .catch((e) =>
+            Promise.reject(new Error(`Failed to append block: ${e.message}`))
+          );
       }
     })
     .concat(
@@ -277,7 +301,7 @@ const applyState = async (notebookPageId: string, state: Schema) => {
         .map(
           (a) => () =>
             window.logseq.Editor.removeBlock(a.uuid).catch((e) =>
-              Promise.reject(`Failed to remove block: ${e.message}`)
+              Promise.reject(new Error(`Failed to remove block: ${e.message}`))
             )
         )
     );
@@ -286,73 +310,94 @@ const applyState = async (notebookPageId: string, state: Schema) => {
 };
 
 const setupSharePageWithNotebook = () => {
-  const { unload, updatePage, isShared, insertContent, deleteContent } =
-    loadSharePageWithNotebook({
-      getCurrentNotebookPageId: () =>
-        logseq.Editor.getCurrentPage().then((p) =>
-          p && !("page" in p) ? p.originalName : ""
-        ),
-      applyState,
-      createPage: (title) =>
-        window.logseq.Editor.createPage(title, {}, { redirect: false }),
-      deletePage: (title) => window.logseq.Editor.deletePage(title),
-      openPage: (title) => {
-        // as usual, logseq is givin trouble...
-        return new Promise<void>((resolve) =>
-          setTimeout(() => {
-            window.parent.location.hash = `#/page/${encodeURIComponent(
-              title.toLowerCase()
+  const { unload, updatePage, isShared } = loadSharePageWithNotebook({
+    getCurrentNotebookPageId: () =>
+      logseq.Editor.getCurrentPage().then((p) =>
+        p
+          ? !("page" in p)
+            ? p.originalName
+            : logseq.Editor.upsertBlockProperty(p.uuid, "id", p.uuid).then(
+                () => p.uuid
+              ) || ""
+          : ""
+      ),
+    applyState,
+    createPage: (title) =>
+      window.logseq.Editor.createPage(title, {}, { redirect: false }),
+    deletePage: (title) => window.logseq.Editor.deletePage(title),
+    openPage: (title) => {
+      // as usual, logseq is givin trouble...
+      return new Promise<void>((resolve) =>
+        setTimeout(() => {
+          window.parent.location.hash = `#/page/${encodeURIComponent(
+            title.toLowerCase()
+          )}`;
+          resolve();
+        }, 1000)
+      );
+    },
+    doesPageExist: (title) =>
+      logseq.Editor.getPage(title).then(
+        (p) => !!p || logseq.Editor.getBlock(title).then((b) => !!b)
+      ),
+    calculateState: async (notebookPageId) =>
+      calculateState(notebookPageId).then(({ nodes, ...atJson }) => atJson),
+    overlayProps: {
+      viewSharedPageProps: {
+        linkNewPage: (_, title) =>
+          window.logseq.Editor.getPage(title)
+            .then(
+              (page) =>
+                page ||
+                window.logseq.Editor.createPage(title, {}, { redirect: false })
+            )
+            .then(() => title),
+        onLinkClick: (notebookPageId, e) => {
+          if (e.shiftKey) {
+            logseq.Editor.openInRightSidebar(notebookPageId);
+          } else {
+            window.location.hash = `#/page/${encodeURIComponent(
+              notebookPageId
             )}`;
-            resolve();
-          }, 1000)
-        );
-      },
-      doesPageExist: (title) => logseq.Editor.getPage(title).then((p) => !!p),
-      calculateState: async (notebookPageId) =>
-        calculateState(notebookPageId).then(({ nodes, ...atJson }) => atJson),
-      overlayProps: {
-        viewSharedPageProps: {
-          linkNewPage: (_, title) =>
-            window.logseq.Editor.getPage(title)
-              .then(
-                (page) =>
-                  page ||
-                  window.logseq.Editor.createPage(
-                    title,
-                    {},
-                    { redirect: false }
-                  )
-              )
-              .then(() => title),
-          onLinkClick: (notebookPageId, e) => {
-            if (e.shiftKey) {
-              logseq.Editor.openInRightSidebar(notebookPageId);
-            } else {
-              window.location.hash = `#/page/${encodeURIComponent(
-                notebookPageId
-              )}`;
-            }
-          },
+          }
         },
-        sharedPageStatusProps: {
-          onCopy: (s) => window.parent.navigator.clipboard.writeText(s),
-          getHtmlElement: async (notebookPageId) => {
-            return Array.from(
-              window.parent.document.querySelectorAll<HTMLHeadingElement>(
-                "h1.title"
+      },
+      sharedPageStatusProps: {
+        onCopy: (s) => window.parent.navigator.clipboard.writeText(s),
+        getHtmlElement: async (notebookPageId) => {
+          return isBlock(notebookPageId)
+            ? Array.from(
+                window.parent.document.querySelectorAll(
+                  `.page-blocks-inner div[id="${notebookPageId}"]`
+                )
               )
-            ).find(
-              (h) =>
-                h.textContent?.toLowerCase() === notebookPageId.toLowerCase()
-            );
-          },
-          selector: "h1.title",
-          getNotebookPageId: async (h) => {
-            return window.logseq.Editor.getPage(
-              h.textContent?.toLowerCase() || ""
-            ).then((p) => p?.originalName || "");
-          },
-          getPath: (heading) => {
+                .map((e) =>
+                  e
+                    .closest("#main-content-container")
+                    ?.querySelector<HTMLDivElement>(".breadcrumb.block-parents")
+                )
+                .find((e): e is HTMLDivElement => !!e)
+            : Array.from(
+                window.parent.document.querySelectorAll<HTMLHeadingElement>(
+                  "h1.title"
+                )
+              ).find(
+                (h) =>
+                  h.textContent?.toLowerCase() === notebookPageId.toLowerCase()
+              );
+        },
+        selector: "h1.title, div.breadcrumb.block-parents",
+        getNotebookPageId: async (h) => {
+          return h.nodeName === "H1"
+            ? window.logseq.Editor.getPage(
+                h.textContent?.toLowerCase() || ""
+              ).then((p) => p?.originalName || "")
+            : h.parentElement?.parentElement?.querySelector(
+                '.page-blocks-inner > div > div[id*="-"]'
+              )?.id || "";
+        },
+        getPath: (heading) => {
+          if (heading.nodeName === "H1") {
             const parent =
               heading?.parentElement?.parentElement?.parentElement
                 ?.parentElement || null;
@@ -361,11 +406,19 @@ const setupSharePageWithNotebook = () => {
               parent.setAttribute("data-samepage-shared", sel);
               return `div[data-samepage-shared="${sel}"] h1.ls-page-title`;
             }
-            return null;
-          },
+          } else {
+            const parent = heading?.parentElement?.parentElement;
+            if (parent) {
+              const sel = v4();
+              parent.setAttribute("data-samepage-shared", sel);
+              return `div[data-samepage-shared="${sel}"]::before(1)`;
+            }
+          }
+          return null;
         },
       },
-    });
+    },
+  });
 
   const idObserver = createHTMLObserver({
     selector: "a.page-property-key",
@@ -391,6 +444,38 @@ const setupSharePageWithNotebook = () => {
       }
     },
   });
+
+  const getParents = (id: number | string): Promise<string[]> =>
+    window.logseq.Editor.getBlock(id).then((b) => {
+      if (b) {
+        if (b.page.id === b.parent.id) {
+          return window.logseq.Editor.getPage(b.page.id).then((p) =>
+            p ? [p.originalName] : []
+          );
+        } else {
+          return getParents(b.parent.id).then((parents) =>
+            parents.concat([b.uuid])
+          );
+        }
+      }
+      return [];
+    });
+
+  const forEachNotebookPageId = async ({
+    blockUuid,
+    callback,
+  }: {
+    blockUuid: string;
+    callback: (notebookPageId: string) => void;
+  }) => {
+    const notebookPageIds = await getParents(blockUuid);
+    notebookPageIds.forEach((n) => {
+      if (isShared(n)) {
+        callback(n);
+      }
+    });
+  };
+
   const refreshState = ({
     blockUuid,
     notebookPageId,
@@ -435,19 +520,18 @@ const setupSharePageWithNotebook = () => {
         el.id.match(
           /^edit-block-\d+-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/
         )?.[1] || "";
-      const notebookPage = await window.logseq.Editor.getBlock(blockUuid).then(
-        (block) => block && window.logseq.Editor.getPage(block.page.id)
-      );
-      const notebookPageId = notebookPage?.originalName || "";
-      if (isShared(notebookPageId)) {
-        clearRefreshRef();
-        refreshState({
-          notebookPageId,
-          label: `Key Presses - ${e.key}`,
-          changeMethod: (c) => window.logseq.DB.onBlockChanged(blockUuid, c),
-          blockUuid,
-        });
-      }
+      forEachNotebookPageId({
+        blockUuid,
+        callback(notebookPageId) {
+          clearRefreshRef();
+          refreshState({
+            notebookPageId,
+            label: `Key Presses - ${e.key}`,
+            changeMethod: (c) => window.logseq.DB.onBlockChanged(blockUuid, c),
+            blockUuid,
+          });
+        },
+      });
     }
   };
   window.parent.document.body.addEventListener("keydown", bodyKeydownListener);
@@ -459,19 +543,18 @@ const setupSharePageWithNotebook = () => {
         el.id.match(
           /^edit-block-\d+-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/
         )?.[1] || "";
-      const notebookPage = await window.logseq.Editor.getBlock(blockUuid).then(
-        (block) => block && window.logseq.Editor.getPage(block.page.id)
-      );
-      const notebookPageId = notebookPage?.originalName || "";
-      if (isShared(notebookPageId)) {
-        clearRefreshRef();
-        refreshState({
-          label: `Paste`,
-          notebookPageId,
-          blockUuid,
-          changeMethod: (c) => window.logseq.DB.onBlockChanged(blockUuid, c),
-        });
-      }
+      forEachNotebookPageId({
+        blockUuid,
+        callback(notebookPageId) {
+          clearRefreshRef();
+          refreshState({
+            label: `Paste`,
+            notebookPageId,
+            blockUuid,
+            changeMethod: (c) => window.logseq.DB.onBlockChanged(blockUuid, c),
+          });
+        },
+      });
     }
   };
   window.parent.document.body.addEventListener("paste", bodyPasteListener);
@@ -481,24 +564,23 @@ const setupSharePageWithNotebook = () => {
     if (el.tagName === "SPAN" && el.hasAttribute("blockid")) {
       const blockUuid = el.getAttribute("blockid");
       if (blockUuid) {
-        const notebookPage = await window.logseq.Editor.getBlock(
-          blockUuid
-        ).then((block) => block && window.logseq.Editor.getPage(block.page.id));
-        const notebookPageId = notebookPage?.originalName || "";
-        if (isShared(notebookPageId)) {
-          clearRefreshRef();
-          refreshState({
-            label: `Drag Block`,
-            blockUuid,
-            notebookPageId,
-            changeMethod: (c) =>
-              window.logseq.DB.onChanged(({ blocks }) => {
-                if (blocks.some((b) => b.uuid === blockUuid)) {
-                  c();
-                }
-              }),
-          });
-        }
+        forEachNotebookPageId({
+          blockUuid,
+          callback(notebookPageId) {
+            clearRefreshRef();
+            refreshState({
+              label: `Drag Block`,
+              blockUuid,
+              notebookPageId,
+              changeMethod: (c) =>
+                window.logseq.DB.onChanged(({ blocks }) => {
+                  if (blocks.some((b) => b.uuid === blockUuid)) {
+                    c();
+                  }
+                }),
+            });
+          },
+        });
       }
     }
   };
