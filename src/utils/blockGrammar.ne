@@ -12,11 +12,13 @@ import {
    createStrikethroughToken,
    createTextToken,
    createImageToken,
-   disambiguateTokens,
 } from "samepage/utils/atJsonTokens";
 import lexer, {
+   disambiguateTokens,
    createReferenceToken,
    parseMacroToken,
+   createWikilinkToken,
+   createHashtagToken,
 } from "./blockLexer";
 %}
 
@@ -35,12 +37,15 @@ token -> %highlight tokens %highlight {% createHighlightingToken %}
    | %leftBracket tokens %rightBracket %leftParen %url %rightParen {% createLinkToken %}
    | %exclamationMark %leftBracket (tokens {% id %} | null {% id %}) %rightBracket %leftParen %url %rightParen {% createImageToken %}
    | %blockReference {% createReferenceToken %}
+   | %hash:? %leftBracket %leftBracket tokens %rightBracket %rightBracket {% createWikilinkToken %}
+   | %hashtag {% createHashtagToken %}
    | %macro {% parseMacroToken %}
    | %text {% createTextToken %}
    | %star  {% createTextToken %}
    | %carot  {% createTextToken %}
    | %tilde  {% createTextToken %}
    | %under  {% createTextToken %}
+   | %hash {% createTextToken %}
    | %leftParen {% createTextToken %}
    | %leftBracket {% createTextToken %}
    | %rightParen {% createTextToken %}

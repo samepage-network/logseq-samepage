@@ -1,6 +1,9 @@
 import { InitialSchema } from "samepage/internal/types";
 import renderAtJson from "samepage/utils/renderAtJson";
 
+const UUID_REGEX =
+  /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/;
+
 const atJsonToLogseq = (state: InitialSchema) => {
   return renderAtJson({
     state,
@@ -32,19 +35,29 @@ const atJsonToLogseq = (state: InitialSchema) => {
       }),
       reference: ({ notebookPageId, notebookUuid }, content) => {
         const replace = content === String.fromCharCode(0);
-        return notebookUuid === window.logseq.settings["uuid"]
-          ? {
+        if (notebookUuid === window.logseq.settings["uuid"]) {
+          if (UUID_REGEX.test(notebookPageId)) {
+            return {
               prefix: replace ? "" : "[",
               suffix: `${replace ? "" : "]("}((${notebookPageId}))${
                 replace ? "" : ")"
               }`,
               replace,
-            }
-          : {
-              prefix: "",
-              suffix: `{{renderer samepage-reference,${notebookUuid}:${notebookPageId}}}`,
-              replace,
             };
+          }
+          return {
+            prefix: replace ? "" : "[",
+            suffix: `${replace ? "" : "]("}[[${notebookPageId}]]${
+              replace ? "" : ")"
+            }`,
+            replace,
+          };
+        }
+        return {
+          prefix: "",
+          suffix: `{{renderer samepage-reference,${notebookUuid}:${notebookPageId}}}`,
+          replace,
+        };
       },
     },
   });

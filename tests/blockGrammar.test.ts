@@ -231,3 +231,74 @@ test("Parse a macro", () => {
     annotations: [],
   })();
 });
+
+test("A normal page reference", () => {
+  runTest("A page [[reference]] to content", {
+    content: `A page ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 7,
+        end: 8,
+        type: "reference",
+        attributes: {
+          notebookPageId: "reference",
+          notebookUuid,
+        },
+      },
+    ],
+  })();
+});
+
+test(
+  "A nested page reference",
+  runTest("A page [[with [[nested]] references]] to content", {
+    content: `A page ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 7,
+        end: 8,
+        type: "reference",
+        attributes: {
+          notebookPageId: "with [[nested]] references",
+          notebookUuid,
+        },
+      },
+    ],
+  })
+);
+
+test(
+  "A hashtag",
+  runTest("A page #tag to content", {
+    content: `A page ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 7,
+        end: 8,
+        type: "reference",
+        attributes: {
+          notebookPageId: "tag",
+          notebookUuid,
+        },
+      },
+    ],
+  })
+);
+
+test(
+  "A hashtagged page reference",
+  runTest("A page #[[That hashtags]] to content", {
+    content: `A page ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 7,
+        end: 8,
+        type: "reference",
+        attributes: {
+          notebookPageId: "That hashtags",
+          notebookUuid,
+        },
+      },
+    ],
+  })
+);
