@@ -2,7 +2,6 @@ import atJsonParser from "samepage/utils/atJsonParser";
 // @ts-ignore for now
 import blockGrammar from "../utils/blockGrammar.ne";
 import setupNotebookQuerying from "samepage/protocols/notebookQuerying";
-import createHTMLObserver from "samepage/utils/createHTMLObserver";
 import ExternalNotebookReference from "../components/ExternalNotebookReference";
 import renderOverlay from "../components/renderOverlay";
 
@@ -10,6 +9,10 @@ const setup = () => {
   const unloads = new Set<() => void>();
   const { unload } = setupNotebookQuerying({
     onQuery: async (notebookPageId) => {
+      const page = await logseq.Editor.getPage(notebookPageId).then(
+        (b) => b?.originalName || null
+      );
+      if (page) return { content: page, annotations: [] };
       const content = await logseq.Editor.getBlock(notebookPageId).then(
         (b) => b?.content || null
       );
@@ -44,7 +47,7 @@ const setup = () => {
     }
   });
   return () => {
-    unloads.forEach(u => u());
+    unloads.forEach((u) => u());
     unload();
   };
 };

@@ -302,3 +302,22 @@ test(
     ],
   })
 );
+
+test(
+  "Empty block",
+  runTest("", {
+    content: ``,
+    annotations: [],
+  })
+);
+
+test(
+  "Double italics",
+  runTest("Deal _with_ two _sets_ of italics", {
+    content: "Deal with two sets of italics",
+    annotations: [
+      { start: 5, end: 9, type: "italics" },
+      { start: 14, end: 18, type: "italics" },
+    ],
+  })
+);
