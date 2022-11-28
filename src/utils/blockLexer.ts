@@ -73,7 +73,11 @@ export const parseMacroToken: Processor<InitialSchema> = (_data) => {
   };
 };
 
-export const createWikilinkToken: Processor<InitialSchema> = (_data) => {
+export const createWikilinkToken: Processor<InitialSchema> = (
+  _data,
+  _,
+  reject
+) => {
   const [, , , token] = _data as [
     moo.Token,
     moo.Token,
@@ -82,6 +86,12 @@ export const createWikilinkToken: Processor<InitialSchema> = (_data) => {
     moo.Token,
     moo.Token
   ];
+  const notebookPageId = atJsonToLogseq(token);
+  const closing = notebookPageId.indexOf("]]");
+  const opening = notebookPageId.indexOf("[[");
+  if (closing >= 0 && (opening < 0 || closing < opening)) {
+    return reject;
+  }
   return {
     content: String.fromCharCode(0),
     annotations: [
@@ -90,7 +100,7 @@ export const createWikilinkToken: Processor<InitialSchema> = (_data) => {
         start: 0,
         end: 1,
         attributes: {
-          notebookPageId: atJsonToLogseq(token),
+          notebookPageId,
           notebookUuid: window.logseq.settings["uuid"],
         },
       } as Annotation,
