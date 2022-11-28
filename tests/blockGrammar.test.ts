@@ -321,3 +321,19 @@ test(
     ],
   })
 );
+
+test(
+  "Just double underscore should be valid",
+  runTest("Review __public pages", {
+    content: "Review __public pages",
+    annotations: [],
+  })
+);
+
+test(
+  "Just double asterisk should be valid",
+  runTest("Review **public pages", {
+    content: "Review **public pages",
+    annotations: [],
+  })
+);
