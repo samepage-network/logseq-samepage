@@ -57,6 +57,15 @@ h1 {
 .text-black p {
   color: #000000;
 }
+
+body textarea {
+  line-height: 1.5;
+}
+
+html body {
+  font-size: 16px; 
+  font-family: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,Noto Sans,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji;
+}
 `)
     );
   const workspace = await logseq.App.getCurrentGraph().then(
