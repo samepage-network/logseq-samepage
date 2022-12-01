@@ -19,6 +19,7 @@ import lexer, {
    parseMacroToken,
    createWikilinkToken,
    createHashtagToken,
+   createNull,
 } from "./blockLexer";
 %}
 
@@ -28,12 +29,12 @@ main -> tokens {% id %} | null {% createEmpty %}
 
 tokens -> token:+ {% disambiguateTokens %}
 
-token -> %highlight tokens %highlight {% createHighlightingToken %}
-   | %strike tokens %strike {% createStrikethroughToken %}
-   | %boldUnder tokens %boldUnder {% createBoldToken %}
-   | %boldStar tokens %boldStar  {% createBoldToken %}
-   | %under tokens %under {% createItalicsToken %}
-   | %star tokens %star {% createItalicsToken %}
+token -> %openDoubleCarot (tokens {% id %} | null {% createNull %}) (%highlight | %openDoubleCarot) {% createHighlightingToken %}
+   | %openDoubleTilde (tokens {% id %} | null {% createNull %}) (%strike | %openDoubleTilde) {% createStrikethroughToken %}
+   | %openDoubleUnder (tokens {% id %} | null {% createNull %}) (%boldUnder | %openDoubleUnder) {% createBoldToken %}
+   | %openDoubleStar (tokens {% id %} | null {% createNull %}) (%boldStar | %openDoubleStar)  {% createBoldToken %}
+   | %openUnder tokens (%under | %openUnder) {% createItalicsToken %}
+   | %openStar tokens (%star | %openStar) {% createItalicsToken %}
    | %leftBracket tokens %rightBracket %leftParen %url %rightParen {% createLinkToken %}
    | %exclamationMark %leftBracket (tokens {% id %} | null {% id %}) %rightBracket %leftParen %url %rightParen {% createImageToken %}
    | %blockReference {% createReferenceToken %}
@@ -48,6 +49,8 @@ token -> %highlight tokens %highlight {% createHighlightingToken %}
    | %hash {% createTextToken %}
    | %boldUnder {% createTextToken %}
    | %boldStar {% createTextToken %}
+   | %highlight {% createTextToken %}
+   | %strike {% createTextToken %}
    | %leftParen {% createTextToken %}
    | %leftBracket {% createTextToken %}
    | %rightParen {% createTextToken %}

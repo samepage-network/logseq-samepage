@@ -15,6 +15,12 @@ const REGEXES = {
   hashtag: /#[a-zA-Z0-9_.-]+/,
   hash: /#/,
   newLine: { match: /\n/, lineBreaks: true },
+  openUnder: { match: /_(?=[^_]+_)/, lineBreaks: true },
+  openStar: { match: /\*(?=[^*]+\*)/, lineBreaks: true },
+  openDoubleUnder: { match: /__(?=(?:[^_]|_[^_])*__)/, lineBreaks: true },
+  openDoubleStar: { match: /\*\*(?=(?:[^*]|\*[^*])*\*\*)/, lineBreaks: true },
+  openDoubleTilde: { match: /~~(?=(?:[^~]|~[^~])*~~)/, lineBreaks: true },
+  openDoubleCarot: { match: /\^\^(?=(?:[^^]|\^[^^])*\^\^)/, lineBreaks: true },
   text: {
     match: /(?:[^:^~_*#[\]!\n(){]|:(?!:)|{(?!{[^}]*}}))+/,
     lineBreaks: true,
@@ -154,6 +160,11 @@ export const disambiguateTokens: Processor<InitialSchema> = (
   }
   return rootDisambiguateTokens(data, _, reject);
 };
+
+export const createNull: Processor<InitialSchema> = () => ({
+  content: String.fromCharCode(0),
+  annotations: [],
+});
 
 const lexer = compileLexer(REGEXES);
 

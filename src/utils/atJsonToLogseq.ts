@@ -8,22 +8,26 @@ const atJsonToLogseq = (state: InitialSchema) => {
   return renderAtJson({
     state,
     applyAnnotation: {
-      bold: {
+      bold: (_, content) => ({
         prefix: "**",
         suffix: `**`,
-      },
-      highlighting: {
+        replace: content === String.fromCharCode(0),
+      }),
+      highlighting: (_, content) => ({
         prefix: "^^",
         suffix: `^^`,
-      },
-      italics: {
+        replace: content === String.fromCharCode(0),
+      }),
+      italics: (_, content) => ({
         prefix: "_",
         suffix: `_`,
-      },
-      strikethrough: {
+        replace: content === String.fromCharCode(0),
+      }),
+      strikethrough: (_, content) => ({
         prefix: "~~",
         suffix: `~~`,
-      },
+        replace: content === String.fromCharCode(0),
+      }),
       link: ({ href }) => ({
         prefix: "[",
         suffix: `](${href})`,

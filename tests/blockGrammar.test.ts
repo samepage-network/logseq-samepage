@@ -5,6 +5,7 @@ import atJsonParser from "samepage/utils/atJsonParser";
 import { test, expect } from "@playwright/test";
 import { v4 } from "uuid";
 import lexer from "../src/utils/blockLexer";
+import atJsonToLogseq from "../src/utils/atJsonToLogseq";
 
 const notebookUuid = v4();
 // @ts-ignore
@@ -20,24 +21,31 @@ global.window = {
   },
 };
 
-const runTest = (md: string, expected: InitialSchema, debug?: true) => () => {
-  if (debug) {
-    const buffer = lexer.reset(md);
-    let token = buffer.next();
-    while (token) {
-      console.log(token);
-      token = buffer.next();
+const runTest =
+  (
+    md: string,
+    expected: InitialSchema,
+    opts: { debug?: true; skipInverse?: true } = {}
+  ) =>
+  () => {
+    if (opts.debug) {
+      const buffer = lexer.reset(md);
+      let token = buffer.next();
+      while (token) {
+        console.log(token);
+        token = buffer.next();
+      }
     }
-  }
-  const output = atJsonParser(blockGrammar, md);
-  expect(output).toBeTruthy();
-  expect(output.content).toEqual(expected.content);
-  expected.annotations.forEach((e, i) => {
-    expect(output.annotations[i]).toEqual(e);
-  });
-  expect(output.annotations[expected.annotations.length]).toBeUndefined();
-  expect(expected.annotations[output.annotations.length]).toBeUndefined();
-};
+    const output = atJsonParser(blockGrammar, md);
+    expect(output).toBeTruthy();
+    expect(output.content).toEqual(expected.content);
+    expected.annotations.forEach((e, i) => {
+      expect(output.annotations[i]).toEqual(e);
+    });
+    expect(output.annotations[expected.annotations.length]).toBeUndefined();
+    expect(expected.annotations[output.annotations.length]).toBeUndefined();
+    // if (!opts.skipInverse) expect(atJsonToLogseq(output)).toEqual(md);
+  };
 
 test(
   "Highlighted Text",
@@ -65,18 +73,26 @@ test(
 
 test(
   "Italics text (asterisk)",
-  runTest("A *italics* text", {
-    content: "A italics text",
-    annotations: [{ type: "italics", start: 2, end: 9 }],
-  })
+  runTest(
+    "A *italics* text",
+    {
+      content: "A italics text",
+      annotations: [{ type: "italics", start: 2, end: 9 }],
+    },
+    { skipInverse: true }
+  )
 );
 
 test(
   "Bold text (underscore)",
-  runTest("A __bold__ text", {
-    content: "A bold text",
-    annotations: [{ type: "bold", start: 2, end: 6 }],
-  })
+  runTest(
+    "A __bold__ text",
+    {
+      content: "A bold text",
+      annotations: [{ type: "bold", start: 2, end: 6 }],
+    },
+    { skipInverse: true }
+  )
 );
 
 test(
@@ -112,18 +128,26 @@ test(
 
 test(
   "Ignore attributes",
-  runTest("Some content\nid:: 12345678-abdf-1234-5678-abcdef123456", {
-    content: "Some content",
-    annotations: [],
-  })
+  runTest(
+    "Some content\nid:: 12345678-abdf-1234-5678-abcdef123456",
+    {
+      content: "Some content",
+      annotations: [],
+    },
+    { skipInverse: true }
+  )
 );
 
 test(
   "Only attribute",
-  runTest("id:: 12345678-abdf-1234-5678-abcdef123456", {
-    content: "",
-    annotations: [],
-  })
+  runTest(
+    "id:: 12345678-abdf-1234-5678-abcdef123456",
+    {
+      content: "",
+      annotations: [],
+    },
+    { skipInverse: true }
+  )
 );
 
 test(
@@ -185,20 +209,24 @@ test(
 );
 
 test("A normal block reference", () => {
-  runTest("A block ((reference)) to content", {
-    content: `A block ${String.fromCharCode(0)} to content`,
-    annotations: [
-      {
-        start: 8,
-        end: 9,
-        type: "reference",
-        attributes: {
-          notebookPageId: "reference",
-          notebookUuid,
+  runTest(
+    "A block ((reference)) to content",
+    {
+      content: `A block ${String.fromCharCode(0)} to content`,
+      annotations: [
+        {
+          start: 8,
+          end: 9,
+          type: "reference",
+          attributes: {
+            notebookPageId: "reference",
+            notebookUuid,
+          },
         },
-      },
-    ],
-  })();
+      ],
+    },
+    { skipInverse: true }
+  )();
 });
 
 test("A cross app block reference", () => {
@@ -269,38 +297,46 @@ test(
 
 test(
   "A hashtag",
-  runTest("A page #tag to content", {
-    content: `A page ${String.fromCharCode(0)} to content`,
-    annotations: [
-      {
-        start: 7,
-        end: 8,
-        type: "reference",
-        attributes: {
-          notebookPageId: "tag",
-          notebookUuid,
+  runTest(
+    "A page #tag to content",
+    {
+      content: `A page ${String.fromCharCode(0)} to content`,
+      annotations: [
+        {
+          start: 7,
+          end: 8,
+          type: "reference",
+          attributes: {
+            notebookPageId: "tag",
+            notebookUuid,
+          },
         },
-      },
-    ],
-  })
+      ],
+    },
+    { skipInverse: true }
+  )
 );
 
 test(
   "A hashtagged page reference",
-  runTest("A page #[[That hashtags]] to content", {
-    content: `A page ${String.fromCharCode(0)} to content`,
-    annotations: [
-      {
-        start: 7,
-        end: 8,
-        type: "reference",
-        attributes: {
-          notebookPageId: "That hashtags",
-          notebookUuid,
+  runTest(
+    "A page #[[That hashtags]] to content",
+    {
+      content: `A page ${String.fromCharCode(0)} to content`,
+      annotations: [
+        {
+          start: 7,
+          end: 8,
+          type: "reference",
+          attributes: {
+            notebookPageId: "That hashtags",
+            notebookUuid,
+          },
         },
-      },
-    ],
-  })
+      ],
+    },
+    { skipInverse: true }
+  )
 );
 
 test(
@@ -319,6 +355,66 @@ test(
       { start: 5, end: 9, type: "italics" },
       { start: 14, end: 18, type: "italics" },
     ],
+  })
+);
+
+test(
+  "Odd number underscores",
+  runTest("Deal _with_ odd _underscores", {
+    content: "Deal with odd _underscores",
+    annotations: [{ start: 5, end: 9, type: "italics" }],
+  })
+);
+
+test(
+  "Odd number asterisks",
+  runTest(
+    "Deal *with* odd *asterisks",
+    {
+      content: "Deal with odd *asterisks",
+      annotations: [{ start: 5, end: 9, type: "italics" }],
+    },
+    { skipInverse: true }
+  )
+);
+
+test(
+  "Odd number double underscores",
+  runTest(
+    "Deal __with__ odd __underscores",
+    {
+      content: `Deal with odd __underscores`,
+      annotations: [{ start: 5, end: 9, type: "bold" }],
+    },
+    { skipInverse: true }
+  )
+);
+
+test(
+  "Odd number double asterisks",
+  runTest(
+    "Deal **with** odd **asterisks",
+    {
+      content: `Deal with odd **asterisks`,
+      annotations: [{ start: 5, end: 9, type: "bold" }],
+    },
+    { skipInverse: true }
+  )
+);
+
+test(
+  "Odd number double tilde",
+  runTest("Deal ~~with~~ odd ~~tildes", {
+    content: `Deal with odd ~~tildes`,
+    annotations: [{ start: 5, end: 9, type: "strikethrough" }],
+  })
+);
+
+test(
+  "Odd number double carot",
+  runTest("Deal ^^with^^ odd ^^carots", {
+    content: `Deal with odd ^^carots`,
+    annotations: [{ start: 5, end: 9, type: "highlighting" }],
   })
 );
 
@@ -361,6 +457,66 @@ test(
           notebookUuid,
         },
       },
+    ],
+  })
+);
+
+test(
+  "Local asset link",
+  runTest(" ![local](../assets/file.pdf)", {
+    content: " ![local](../assets/file.pdf)",
+    annotations: [],
+  })
+);
+
+test(
+  "Double double bold text means no bold",
+  runTest("A ****Bold**** text", {
+    content: `A ${String.fromCharCode(0)}Bold${String.fromCharCode(0)} text`,
+    annotations: [
+      { end: 3, start: 2, type: "bold" },
+      { end: 8, start: 7, type: "bold" },
+    ],
+  })
+);
+
+test(
+  "Double double underscore text means no bold",
+  runTest(
+    "A ____slanted____ text",
+    {
+      content: `A ${String.fromCharCode(0)}slanted${String.fromCharCode(
+        0
+      )} text`,
+      annotations: [
+        { end: 3, start: 2, type: "bold" },
+        { end: 11, start: 10, type: "bold" },
+      ],
+    },
+    { skipInverse: true }
+  )
+);
+
+test(
+  "Double double highlight text means no highlight",
+  runTest("A ^^^^highlight^^^^ text", {
+    content: `A ${String.fromCharCode(0)}highlight${String.fromCharCode(
+      0
+    )} text`,
+    annotations: [
+      { end: 3, start: 2, type: "highlighting" },
+      { end: 13, start: 12, type: "highlighting" },
+    ],
+  })
+);
+
+test(
+  "Double double strikethrough text means no strikethrough",
+  runTest("A ~~~~struck~~~~ text", {
+    content: `A ${String.fromCharCode(0)}struck${String.fromCharCode(0)} text`,
+    annotations: [
+      { end: 3, start: 2, type: "strikethrough" },
+      { end: 10, start: 9, type: "strikethrough" },
     ],
   })
 );
