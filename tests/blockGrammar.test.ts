@@ -44,7 +44,7 @@ const runTest =
     });
     expect(output.annotations[expected.annotations.length]).toBeUndefined();
     expect(expected.annotations[output.annotations.length]).toBeUndefined();
-    // if (!opts.skipInverse) expect(atJsonToLogseq(output)).toEqual(md);
+    if (!opts.skipInverse) expect(atJsonToLogseq(output)).toEqual(md);
   };
 
 test(
@@ -518,5 +518,25 @@ test(
       { end: 3, start: 2, type: "strikethrough" },
       { end: 10, start: 9, type: "strikethrough" },
     ],
+  })
+);
+
+test(
+  "Underscore within bold underscores",
+  runTest(
+    "__hello_world__",
+    {
+      content: "hello_world",
+      annotations: [{ end: 11, start: 0, type: "bold" }],
+    },
+    { skipInverse: true }
+  )
+);
+
+test(
+  "Asterisk within bold stars",
+  runTest("**hello*world**", {
+    content: "hello*world",
+    annotations: [{ end: 11, start: 0, type: "bold" }],
   })
 );

@@ -11,6 +11,7 @@ import Automerge from "automerge";
 import blockGrammar from "../utils/blockGrammar.ne";
 import renderAtJson from "samepage/utils/renderAtJson";
 import { v4 } from "uuid";
+import datefnsFormat from "date-fns/format";
 
 const UUID_REGEX =
   /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i;
@@ -98,7 +99,9 @@ const calculateState = async (notebookPageId: string) => {
       ? window.logseq.Editor.getBlock(notebookPageId, {
           includeChildren: true,
         }).then((b) => (b && b.children) || [])
-      : window.logseq.Editor.getPageBlocksTree(notebookPageId))
+      : window.logseq.Editor.getPageBlocksTree(notebookPageId).then(
+          (tree) => tree || []
+        ))
   ).filter(isContentBlock);
   return {
     ...toAtJson({
@@ -319,7 +322,7 @@ const setupSharePageWithNotebook = () => {
             : logseq.Editor.upsertBlockProperty(p.uuid, "id", p.uuid).then(
                 () => p.uuid
               ) || ""
-          : ""
+          : datefnsFormat(new Date(), "MMM do, yyyy")
       ),
     applyState,
     createPage: (title) =>
@@ -404,7 +407,7 @@ const setupSharePageWithNotebook = () => {
             if (parent) {
               const sel = v4();
               parent.setAttribute("data-samepage-shared", sel);
-              return `div[data-samepage-shared="${sel}"] h1.ls-page-title`;
+              return `div[data-samepage-shared="${sel}"] h1.ls-page-title, div[data-samepage-shared="${sel}"] .journal-title h1.title`;
             }
           } else {
             const parent = heading?.parentElement?.parentElement;
