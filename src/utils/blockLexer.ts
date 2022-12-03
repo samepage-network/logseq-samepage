@@ -4,6 +4,8 @@ import {
   DEFAULT_TOKENS,
   Processor,
   disambiguateTokens as rootDisambiguateTokens,
+  createBoldToken as parentCreateBoldToken,
+  createItalicsToken as parentCreateItalicsToken,
 } from "samepage/utils/atJsonTokens";
 import atJsonToLogseq from "./atJsonToLogseq";
 
@@ -25,6 +27,34 @@ const REGEXES = {
     match: /(?:[^:^~_*#[\]!\n(){]|:(?!:)|{(?!{[^}]*}}))+/,
     lineBreaks: true,
   },
+};
+
+export const createBoldToken: Processor<InitialSchema> = (data, _, reject) => {
+  const result = parentCreateBoldToken(data, _, reject);
+  if (result === reject) return reject;
+  const [bold] = (result as InitialSchema).annotations;
+  bold.appAttributes = {
+    logseq: {
+      kind: (data as [moo.Token])[0].value,
+    },
+  };
+  return result;
+};
+
+export const createItalicsToken: Processor<InitialSchema> = (
+  data,
+  _,
+  reject
+) => {
+  const result = parentCreateItalicsToken(data, _, reject);
+  if (result === reject) return reject;
+  const [ital] = (result as InitialSchema).annotations;
+  ital.appAttributes = {
+    logseq: {
+      kind: (data as [moo.Token])[0].value,
+    },
+  };
+  return result;
 };
 
 export const createReferenceToken: Processor<InitialSchema> = (_data) => {
@@ -84,7 +114,7 @@ export const createWikilinkToken: Processor<InitialSchema> = (
   _,
   reject
 ) => {
-  const [, , , token] = _data as [
+  const [hash, , , token] = _data as [
     moo.Token,
     moo.Token,
     moo.Token,
@@ -109,6 +139,11 @@ export const createWikilinkToken: Processor<InitialSchema> = (
           notebookPageId,
           notebookUuid: window.logseq.settings["uuid"],
         },
+        appAttributes: {
+          logseq: {
+            kind: hash ? "hash-wikilink" : "wikilink",
+          },
+        },
       } as Annotation,
     ],
   };
@@ -126,6 +161,11 @@ export const createHashtagToken: Processor<InitialSchema> = (_data) => {
         attributes: {
           notebookPageId: token.value.replace(/^#/, ""),
           notebookUuid: window.logseq.settings["uuid"],
+        },
+        appAttributes: {
+          logseq: {
+            kind: "hash",
+          },
         },
       } as Annotation,
     ],

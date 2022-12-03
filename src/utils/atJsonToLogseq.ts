@@ -8,36 +8,40 @@ const atJsonToLogseq = (state: InitialSchema) => {
   return renderAtJson({
     state,
     applyAnnotation: {
-      bold: (_, content) => ({
-        prefix: "**",
-        suffix: `**`,
+      bold: ({ content, appAttributes }) => ({
+        prefix: appAttributes?.kind || "**",
+        suffix: appAttributes?.kind || `**`,
         replace: content === String.fromCharCode(0),
       }),
-      highlighting: (_, content) => ({
+      highlighting: ({ content }) => ({
         prefix: "^^",
         suffix: `^^`,
         replace: content === String.fromCharCode(0),
       }),
-      italics: (_, content) => ({
-        prefix: "_",
-        suffix: `_`,
+      italics: ({ content, appAttributes }) => ({
+        prefix: appAttributes?.kind || "_",
+        suffix: appAttributes?.kind || `_`,
         replace: content === String.fromCharCode(0),
       }),
-      strikethrough: (_, content) => ({
+      strikethrough: ({ content }) => ({
         prefix: "~~",
         suffix: `~~`,
         replace: content === String.fromCharCode(0),
       }),
-      link: ({ href }) => ({
+      link: ({ attributes: { href } }) => ({
         prefix: "[",
         suffix: `](${href})`,
       }),
-      image: ({ src }, content) => ({
+      image: ({ attributes: { src }, content }) => ({
         prefix: "![",
         suffix: `](${src})`,
         replace: content === String.fromCharCode(0),
       }),
-      reference: ({ notebookPageId, notebookUuid }, content) => {
+      reference: ({
+        attributes: { notebookPageId, notebookUuid },
+        content,
+        appAttributes: { kind },
+      }) => {
         const replace = content === String.fromCharCode(0);
         if (notebookUuid === window.logseq.settings["uuid"]) {
           if (UUID_REGEX.test(notebookPageId)) {
@@ -51,9 +55,13 @@ const atJsonToLogseq = (state: InitialSchema) => {
           }
           return {
             prefix: replace ? "" : "[",
-            suffix: `${replace ? "" : "]("}[[${notebookPageId}]]${
-              replace ? "" : ")"
-            }`,
+            suffix: `${replace ? "" : "]("}${
+              kind === "hash-wikilink"
+                ? `#[[${notebookPageId}]]`
+                : kind === "hash"
+                ? `#${notebookPageId}`
+                : `[[${notebookPageId}]]`
+            }${replace ? "" : ")"}`,
             replace,
           };
         }
