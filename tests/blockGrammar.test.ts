@@ -6,6 +6,7 @@ import { test, expect } from "@playwright/test";
 import { v4 } from "uuid";
 import lexer from "../src/utils/blockLexer";
 import atJsonToLogseq from "../src/utils/atJsonToLogseq";
+import registry from "samepage/internal/registry";
 
 const notebookUuid = v4();
 // @ts-ignore
@@ -47,6 +48,10 @@ const runTest =
     if (!opts.skipInverse) expect(atJsonToLogseq(output)).toEqual(md);
   };
 
+test.beforeAll(() => {
+  registry({ app: 2 });
+});
+
 test(
   "Highlighted Text",
   runTest("A ^^highlighted^^ text", {
@@ -67,39 +72,59 @@ test(
   "Italics text (underscore)",
   runTest("A _italics_ text", {
     content: "A italics text",
-    annotations: [{ type: "italics", start: 2, end: 9 }],
+    annotations: [
+      {
+        type: "italics",
+        start: 2,
+        end: 9,
+        appAttributes: { logseq: { kind: "_" } },
+      },
+    ],
   })
 );
 
 test(
   "Italics text (asterisk)",
-  runTest(
-    "A *italics* text",
-    {
-      content: "A italics text",
-      annotations: [{ type: "italics", start: 2, end: 9 }],
-    },
-    { skipInverse: true }
-  )
+  runTest("A *italics* text", {
+    content: "A italics text",
+    annotations: [
+      {
+        type: "italics",
+        start: 2,
+        end: 9,
+        appAttributes: { logseq: { kind: "*" } },
+      },
+    ],
+  })
 );
 
 test(
   "Bold text (underscore)",
-  runTest(
-    "A __bold__ text",
-    {
-      content: "A bold text",
-      annotations: [{ type: "bold", start: 2, end: 6 }],
-    },
-    { skipInverse: true }
-  )
+  runTest("A __bold__ text", {
+    content: "A bold text",
+    annotations: [
+      {
+        type: "bold",
+        start: 2,
+        end: 6,
+        appAttributes: { logseq: { kind: "__" } },
+      },
+    ],
+  })
 );
 
 test(
   "Bold text (asterisk)",
   runTest("A **bold** text", {
     content: "A bold text",
-    annotations: [{ type: "bold", start: 2, end: 6 }],
+    annotations: [
+      {
+        type: "bold",
+        start: 2,
+        end: 6,
+        appAttributes: { logseq: { kind: "**" } },
+      },
+    ],
   })
 );
 
@@ -209,24 +234,20 @@ test(
 );
 
 test("A normal block reference", () => {
-  runTest(
-    "A block ((reference)) to content",
-    {
-      content: `A block ${String.fromCharCode(0)} to content`,
-      annotations: [
-        {
-          start: 8,
-          end: 9,
-          type: "reference",
-          attributes: {
-            notebookPageId: "reference",
-            notebookUuid,
-          },
+  runTest("A block ((abcd1234-abcd-1234-abcd-1234abcd1234)) to content", {
+    content: `A block ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 8,
+        end: 9,
+        type: "reference",
+        attributes: {
+          notebookPageId: "abcd1234-abcd-1234-abcd-1234abcd1234",
+          notebookUuid,
         },
-      ],
-    },
-    { skipInverse: true }
-  )();
+      },
+    ],
+  })();
 });
 
 test("A cross app block reference", () => {
@@ -272,6 +293,11 @@ test("A normal page reference", () => {
           notebookPageId: "reference",
           notebookUuid,
         },
+        appAttributes: {
+          logseq: {
+            kind: "wikilink",
+          },
+        },
       },
     ],
   })();
@@ -290,6 +316,11 @@ test(
           notebookPageId: "with [[nested]] references",
           notebookUuid,
         },
+        appAttributes: {
+          logseq: {
+            kind: "wikilink",
+          },
+        },
       },
     ],
   })
@@ -297,46 +328,48 @@ test(
 
 test(
   "A hashtag",
-  runTest(
-    "A page #tag to content",
-    {
-      content: `A page ${String.fromCharCode(0)} to content`,
-      annotations: [
-        {
-          start: 7,
-          end: 8,
-          type: "reference",
-          attributes: {
-            notebookPageId: "tag",
-            notebookUuid,
+  runTest("A page #tag to content", {
+    content: `A page ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 7,
+        end: 8,
+        type: "reference",
+        attributes: {
+          notebookPageId: "tag",
+          notebookUuid,
+        },
+        appAttributes: {
+          logseq: {
+            kind: "hash",
           },
         },
-      ],
-    },
-    { skipInverse: true }
-  )
+      },
+    ],
+  })
 );
 
 test(
   "A hashtagged page reference",
-  runTest(
-    "A page #[[That hashtags]] to content",
-    {
-      content: `A page ${String.fromCharCode(0)} to content`,
-      annotations: [
-        {
-          start: 7,
-          end: 8,
-          type: "reference",
-          attributes: {
-            notebookPageId: "That hashtags",
-            notebookUuid,
+  runTest("A page #[[That hashtags]] to content", {
+    content: `A page ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 7,
+        end: 8,
+        type: "reference",
+        attributes: {
+          notebookPageId: "That hashtags",
+          notebookUuid,
+        },
+        appAttributes: {
+          logseq: {
+            kind: "hash-wikilink",
           },
         },
-      ],
-    },
-    { skipInverse: true }
-  )
+      },
+    ],
+  })
 );
 
 test(
@@ -352,8 +385,18 @@ test(
   runTest("Deal _with_ two _sets_ of italics", {
     content: "Deal with two sets of italics",
     annotations: [
-      { start: 5, end: 9, type: "italics" },
-      { start: 14, end: 18, type: "italics" },
+      {
+        start: 5,
+        end: 9,
+        type: "italics",
+        appAttributes: { logseq: { kind: "_" } },
+      },
+      {
+        start: 14,
+        end: 18,
+        type: "italics",
+        appAttributes: { logseq: { kind: "_" } },
+      },
     ],
   })
 );
@@ -362,44 +405,60 @@ test(
   "Odd number underscores",
   runTest("Deal _with_ odd _underscores", {
     content: "Deal with odd _underscores",
-    annotations: [{ start: 5, end: 9, type: "italics" }],
+    annotations: [
+      {
+        start: 5,
+        end: 9,
+        type: "italics",
+        appAttributes: { logseq: { kind: "_" } },
+      },
+    ],
   })
 );
 
 test(
   "Odd number asterisks",
-  runTest(
-    "Deal *with* odd *asterisks",
-    {
-      content: "Deal with odd *asterisks",
-      annotations: [{ start: 5, end: 9, type: "italics" }],
-    },
-    { skipInverse: true }
-  )
+  runTest("Deal *with* odd *asterisks", {
+    content: "Deal with odd *asterisks",
+    annotations: [
+      {
+        start: 5,
+        end: 9,
+        type: "italics",
+        appAttributes: { logseq: { kind: "*" } },
+      },
+    ],
+  })
 );
 
 test(
   "Odd number double underscores",
-  runTest(
-    "Deal __with__ odd __underscores",
-    {
-      content: `Deal with odd __underscores`,
-      annotations: [{ start: 5, end: 9, type: "bold" }],
-    },
-    { skipInverse: true }
-  )
+  runTest("Deal __with__ odd __underscores", {
+    content: `Deal with odd __underscores`,
+    annotations: [
+      {
+        start: 5,
+        end: 9,
+        type: "bold",
+        appAttributes: { logseq: { kind: "__" } },
+      },
+    ],
+  })
 );
 
 test(
   "Odd number double asterisks",
-  runTest(
-    "Deal **with** odd **asterisks",
-    {
-      content: `Deal with odd **asterisks`,
-      annotations: [{ start: 5, end: 9, type: "bold" }],
-    },
-    { skipInverse: true }
-  )
+  runTest("Deal **with** odd **asterisks", {
+    content: `Deal with odd **asterisks`,
+    annotations: [
+      {
+        start: 5,
+        end: 9,
+        type: "bold",
+        appAttributes: { logseq: { kind: "**" } },
+      },
+    ],
+  })
 );
 
 test(
@@ -447,6 +506,11 @@ test(
           notebookPageId: "page",
           notebookUuid,
         },
+        appAttributes: {
+          logseq: {
+            kind: "wikilink",
+          },
+        },
       },
       {
         start: 14,
@@ -455,6 +519,11 @@ test(
         attributes: {
           notebookPageId: "pages",
           notebookUuid,
+        },
+        appAttributes: {
+          logseq: {
+            kind: "wikilink",
+          },
         },
       },
     ],
@@ -474,27 +543,41 @@ test(
   runTest("A ****Bold**** text", {
     content: `A ${String.fromCharCode(0)}Bold${String.fromCharCode(0)} text`,
     annotations: [
-      { end: 3, start: 2, type: "bold" },
-      { end: 8, start: 7, type: "bold" },
+      {
+        end: 3,
+        start: 2,
+        type: "bold",
+        appAttributes: { logseq: { kind: "**" } },
+      },
+      {
+        end: 8,
+        start: 7,
+        type: "bold",
+        appAttributes: { logseq: { kind: "**" } },
+      },
     ],
   })
 );
 
 test(
   "Double double underscore text means no bold",
-  runTest(
-    "A ____slanted____ text",
-    {
-      content: `A ${String.fromCharCode(0)}slanted${String.fromCharCode(
-        0
-      )} text`,
-      annotations: [
-        { end: 3, start: 2, type: "bold" },
-        { end: 11, start: 10, type: "bold" },
-      ],
-    },
-    { skipInverse: true }
-  )
+  runTest("A ____slanted____ text", {
+    content: `A ${String.fromCharCode(0)}slanted${String.fromCharCode(0)} text`,
+    annotations: [
+      {
+        end: 3,
+        start: 2,
+        type: "bold",
+        appAttributes: { logseq: { kind: "__" } },
+      },
+      {
+        end: 11,
+        start: 10,
+        type: "bold",
+        appAttributes: { logseq: { kind: "__" } },
+      },
+    ],
+  })
 );
 
 test(
@@ -523,20 +606,30 @@ test(
 
 test(
   "Underscore within bold underscores",
-  runTest(
-    "__hello_world__",
-    {
-      content: "hello_world",
-      annotations: [{ end: 11, start: 0, type: "bold" }],
-    },
-    { skipInverse: true }
-  )
+  runTest("__hello_world__", {
+    content: "hello_world",
+    annotations: [
+      {
+        end: 11,
+        start: 0,
+        type: "bold",
+        appAttributes: { logseq: { kind: "__" } },
+      },
+    ],
+  })
 );
 
 test(
   "Asterisk within bold stars",
   runTest("**hello*world**", {
     content: "hello*world",
-    annotations: [{ end: 11, start: 0, type: "bold" }],
+    annotations: [
+      {
+        end: 11,
+        start: 0,
+        type: "bold",
+        appAttributes: { logseq: { kind: "**" } },
+      },
+    ],
   })
 );

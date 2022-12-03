@@ -4,10 +4,8 @@
 
 @{%
 import {
-   createBoldToken,
    createEmpty,
    createHighlightingToken,
-   createItalicsToken,
    createLinkToken,
    createStrikethroughToken,
    createTextToken,
@@ -15,6 +13,8 @@ import {
 } from "samepage/utils/atJsonTokens";
 import lexer, {
    disambiguateTokens,
+   createBoldToken,
+   createItalicsToken,
    createReferenceToken,
    parseMacroToken,
    createWikilinkToken,
