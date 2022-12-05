@@ -1,4 +1,4 @@
-import type { InitialSchema, Schema } from "samepage/internal/types";
+import type { InitialSchema } from "samepage/internal/types";
 import loadSharePageWithNotebook from "samepage/protocols/sharePageWithNotebook";
 import atJsonParser from "samepage/utils/atJsonParser";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
@@ -9,9 +9,10 @@ import type {
 import Automerge from "automerge";
 //@ts-ignore Fix later, already compiles
 import blockGrammar from "../utils/blockGrammar.ne";
-import renderAtJson from "samepage/utils/renderAtJson";
 import { v4 } from "uuid";
 import datefnsFormat from "date-fns/format";
+import atJsonToLogseq from "../utils/atJsonToLogseq";
+import { has as isShared } from "samepage/utils/localAutomergeDb";
 
 const UUID_REGEX =
   /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i;
@@ -28,7 +29,7 @@ const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
         _content.length ? _content : String.fromCharCode(0)
       }\n`;
       const end = content.length + index;
-      const blockAnnotations: Schema["annotations"] = [
+      const blockAnnotations: InitialSchema["annotations"] = [
         {
           start: index,
           end,
@@ -61,7 +62,7 @@ const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
       },
       {
         content: "",
-        annotations: [] as Schema["annotations"],
+        annotations: [] as InitialSchema["annotations"],
       }
     );
 };
@@ -117,11 +118,11 @@ type SamepageNode = {
   annotation: {
     start: number;
     end: number;
-    annotations: Schema["annotations"];
+    annotations: InitialSchema["annotations"];
   };
 };
 
-const applyState = async (notebookPageId: string, state: Schema) => {
+const applyState = async (notebookPageId: string, state: InitialSchema) => {
   const rootPageUuid = UUID_REGEX.test(notebookPageId)
     ? notebookPageId
     : await window.logseq.Editor.getPage(notebookPageId).then(
@@ -131,10 +132,7 @@ const applyState = async (notebookPageId: string, state: Schema) => {
   state.annotations.forEach((anno) => {
     if (anno.type === "block") {
       const currentBlock = {
-        content: state.content
-          .slice(anno.start, anno.end)
-          .join("")
-          .replace(/\n$/, ""),
+        content: state.content.slice(anno.start, anno.end).replace(/\n$/, ""),
         level: anno.attributes.level,
         annotation: {
           start: anno.start,
@@ -160,47 +158,9 @@ const applyState = async (notebookPageId: string, state: Schema) => {
       start: a.start - offset,
       end: a.end - offset,
     }));
-    block.content = renderAtJson({
-      state: {
-        content: block.content,
-        annotations: normalizedAnnotations,
-      },
-      applyAnnotation: {
-        bold: {
-          prefix: "**",
-          suffix: `**`,
-        },
-        highlighting: {
-          prefix: "^^",
-          suffix: `^^`,
-        },
-        italics: {
-          prefix: "_",
-          suffix: `_`,
-        },
-        strikethrough: {
-          prefix: "~~",
-          suffix: `~~`,
-        },
-        link: ({ href }) => ({
-          prefix: "[",
-          suffix: `](${href})`,
-        }),
-        image: ({ src }, content) => ({
-          prefix: "![",
-          suffix: `](${src})`,
-          replace: content === String.fromCharCode(0),
-        }),
-        reference: ({ notebookPageId, notebookUuid }, content) => ({
-          prefix: "((",
-          suffix: `${
-            notebookUuid === window.logseq.settings["uuid"]
-              ? notebookPageId
-              : `${notebookUuid}:${notebookPageId}`
-          }))`,
-          replace: content === String.fromCharCode(0),
-        }),
-      },
+    block.content = atJsonToLogseq({
+      content: block.content,
+      annotations: normalizedAnnotations,
     });
   });
   const actualTree = await (isBlock(notebookPageId)
@@ -313,7 +273,7 @@ const applyState = async (notebookPageId: string, state: Schema) => {
 };
 
 const setupSharePageWithNotebook = () => {
-  const { unload, updatePage, isShared } = loadSharePageWithNotebook({
+  const { unload, refreshContent } = loadSharePageWithNotebook({
     getCurrentNotebookPageId: () =>
       logseq.Editor.getCurrentPage().then((p) =>
         p
@@ -491,19 +451,7 @@ const setupSharePageWithNotebook = () => {
     changeMethod: (callback: () => {}) => () => void;
   }) => {
     refreshRef = changeMethod(async () => {
-      const doc = await calculateState(notebookPageId);
-      updatePage({
-        notebookPageId,
-        label,
-        callback: (oldDoc) => {
-          clearRefreshRef();
-          oldDoc.content.deleteAt?.(0, oldDoc.content.length);
-          oldDoc.content.insertAt?.(0, ...new Automerge.Text(doc.content));
-          if (!oldDoc.annotations) oldDoc.annotations = [];
-          oldDoc.annotations.splice(0, oldDoc.annotations.length);
-          doc.annotations.forEach((a) => oldDoc.annotations.push(a));
-        },
-      });
+      refreshContent({ notebookPageId, label });
     });
   };
 

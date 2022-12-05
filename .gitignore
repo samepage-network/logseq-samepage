@@ -5,3 +5,4 @@ dist-ssr
 *.local
 src/utils/blockGrammar.ts
 test.json
+coverage
