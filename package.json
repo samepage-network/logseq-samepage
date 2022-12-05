@@ -1,6 +1,6 @@
 {
   "name": "logseq-samepage",
-  "version": "2.1.11",
+  "version": "2.1.12",
   "description": "Official LogSeq client into the intra tool-for-thought protocol.",
   "main": "index.html",
   "scripts": {
