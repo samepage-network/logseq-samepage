@@ -15,7 +15,7 @@ import atJsonToLogseq from "../utils/atJsonToLogseq";
 import { has as isShared } from "samepage/utils/localAutomergeDb";
 
 const UUID_REGEX =
-  /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i;
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const isBlock = (notebookPageId: string) => UUID_REGEX.test(notebookPageId);
 
 const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
@@ -301,7 +301,9 @@ const setupSharePageWithNotebook = () => {
     },
     doesPageExist: (title) =>
       logseq.Editor.getPage(title).then(
-        (p) => !!p || logseq.Editor.getBlock(title).then((b) => !!b)
+        (p) =>
+          !!p ||
+          (isBlock(title) && logseq.Editor.getBlock(title).then((b) => !!b))
       ),
     calculateState: async (notebookPageId) =>
       calculateState(notebookPageId).then(({ nodes, ...atJson }) => atJson),
@@ -327,28 +329,6 @@ const setupSharePageWithNotebook = () => {
       },
       sharedPageStatusProps: {
         onCopy: (s) => window.parent.navigator.clipboard.writeText(s),
-        getHtmlElement: async (notebookPageId) => {
-          return isBlock(notebookPageId)
-            ? Array.from(
-                window.parent.document.querySelectorAll(
-                  `.page-blocks-inner div[id="${notebookPageId}"]`
-                )
-              )
-                .map((e) =>
-                  e
-                    .closest("#main-content-container")
-                    ?.querySelector<HTMLDivElement>(".breadcrumb.block-parents")
-                )
-                .find((e): e is HTMLDivElement => !!e)
-            : Array.from(
-                window.parent.document.querySelectorAll<HTMLHeadingElement>(
-                  "h1.title"
-                )
-              ).find(
-                (h) =>
-                  h.textContent?.toLowerCase() === notebookPageId.toLowerCase()
-              );
-        },
         selector: "h1.title, div.breadcrumb.block-parents",
         getNotebookPageId: async (h) => {
           return h.nodeName === "H1"
@@ -359,25 +339,54 @@ const setupSharePageWithNotebook = () => {
                 '.page-blocks-inner > div > div[id*="-"]'
               )?.id || "";
         },
-        getPath: (heading) => {
-          if (heading.nodeName === "H1") {
-            const parent =
-              heading?.parentElement?.parentElement?.parentElement
-                ?.parentElement || null;
-            if (parent) {
-              const sel = v4();
-              parent.setAttribute("data-samepage-shared", sel);
-              return `div[data-samepage-shared="${sel}"] div.ls-page-title, div[data-samepage-shared="${sel}"] h1.ls-page-title, div[data-samepage-shared="${sel}"] .journal-title h1.title`;
+        getPaths: (notebookPageId) => {
+          return (
+            isBlock(notebookPageId)
+              ? Array.from(
+                  window.parent.document.querySelectorAll(
+                    `.page-blocks-inner div[id="${notebookPageId}"]`
+                  )
+                )
+                  .map((e) =>
+                    e
+                      .closest("#main-content-container")
+                      ?.querySelector<HTMLDivElement>(
+                        ".breadcrumb.block-parents"
+                      )
+                  )
+                  .filter((e): e is HTMLDivElement => !!e)
+              : Array.from(
+                  window.parent.document.querySelectorAll<HTMLHeadingElement>(
+                    "h1.title"
+                  )
+                ).filter(
+                  (h) =>
+                    h.textContent?.toLowerCase() ===
+                    notebookPageId.toLowerCase()
+                )
+          ).flatMap((heading) => {
+            if (heading.nodeName === "H1") {
+              const parent =
+                heading?.parentElement?.parentElement?.parentElement
+                  ?.parentElement || null;
+              if (parent) {
+                const sel = v4();
+                parent.setAttribute("data-samepage-shared", sel);
+                return [
+                  `div[data-samepage-shared="${sel}"] div.ls-page-title, div[data-samepage-shared="${sel}"] h1.ls-page-title, div[data-samepage-shared="${sel}"] .journal-title h1.title`,
+                ];
+              }
+              return [];
+            } else {
+              const parent = heading?.parentElement?.parentElement;
+              if (parent) {
+                const sel = v4();
+                parent.setAttribute("data-samepage-shared", sel);
+                return [`div[data-samepage-shared="${sel}"]::before(1)`];
+              }
+              return [];
             }
-          } else {
-            const parent = heading?.parentElement?.parentElement;
-            if (parent) {
-              const sel = v4();
-              parent.setAttribute("data-samepage-shared", sel);
-              return `div[data-samepage-shared="${sel}"]::before(1)`;
-            }
-          }
-          return null;
+          });
         },
       },
     },
