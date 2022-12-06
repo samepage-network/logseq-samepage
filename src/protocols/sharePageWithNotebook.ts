@@ -367,7 +367,7 @@ const setupSharePageWithNotebook = () => {
             if (parent) {
               const sel = v4();
               parent.setAttribute("data-samepage-shared", sel);
-              return `div[data-samepage-shared="${sel}"] h1.ls-page-title, div[data-samepage-shared="${sel}"] .journal-title h1.title`;
+              return `div[data-samepage-shared="${sel}"] div.ls-page-title, div[data-samepage-shared="${sel}"] h1.ls-page-title, div[data-samepage-shared="${sel}"] .journal-title h1.title`;
             }
           } else {
             const parent = heading?.parentElement?.parentElement;
