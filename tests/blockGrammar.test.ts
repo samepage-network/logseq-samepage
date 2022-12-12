@@ -178,8 +178,17 @@ test(
 test(
   "Aliasless link",
   runTest("A [](https://samepage.network) text", {
-    content: "A [](https://samepage.network) text",
-    annotations: [],
+    content: `A ${String.fromCharCode(0)} text`,
+    annotations: [
+      {
+        start: 2,
+        end: 3,
+        type: "link",
+        attributes: {
+          href: "https://samepage.network",
+        },
+      },
+    ],
   })
 );
 
@@ -533,8 +542,17 @@ test(
 test(
   "Local asset link",
   runTest(" ![local](../assets/file.pdf)", {
-    content: " ![local](../assets/file.pdf)",
-    annotations: [],
+    content: " local",
+    annotations: [
+      {
+        start: 1,
+        end: 6,
+        type: "image", // TODO - change to asset type with contentType variable?
+        attributes: {
+          src: "../assets/file.pdf",
+        },
+      },
+    ],
   })
 );
 
@@ -633,3 +651,63 @@ test(
     ],
   })
 );
+
+test(
+  "multiple aliases",
+  runTest(
+    "links: [one]([nested] some text - https://samepage.network), [two](https://samepage.network), [three](https://samepage.network)",
+    {
+      content: "links: one, two, three",
+      annotations: [
+        {
+          start: 7,
+          end: 10,
+          type: "link",
+          attributes: { href: "[nested] some text - https://samepage.network" },
+        },
+        {
+          start: 12,
+          end: 15,
+          type: "link",
+          attributes: { href: "https://samepage.network" },
+        },
+        {
+          start: 17,
+          end: 22,
+          type: "link",
+          attributes: { href: "https://samepage.network" },
+        },
+      ],
+    }
+  )
+);
+
+// test(
+//   "Code Blocks",
+//   runTest(
+//     `\`\`\` python
+// class SubClass(SuperClass):
+
+//     def __init__(self, **kwargs):
+//         super(SubClass, self).__init__(**kwargs)
+
+//     def method(self, *args, **kwargs):
+//         # A comment about what's going on
+//         self.field = Method(*pool_args, **pool_kwargs)
+// \`\`\``,
+//     {
+//       content:
+//         "class SubClass(SuperClass):\n\n .   def __init__(self, **kwargs):\n .       super(SubClass, self).__init__(**kwargs)\n\n .   def method(self, *args, **kwargs):\n .       # A comment about what's going on\n        self.field = Method(*pool_args, **pool_kwargs)\n",
+//       annotations: [
+//         {
+//           type: "code",
+//           start: 0,
+//           end: 253,
+//           attributes: {
+//             language: "python",
+//           },
+//         },
+//       ],
+//     }
+//   )
+// );

@@ -11,6 +11,8 @@ import atJsonToLogseq from "./atJsonToLogseq";
 
 const REGEXES = {
   attribute: { match: /\n?[a-z]+::[^\n]+/, lineBreaks: true },
+  alias: /\[[^\]]*\]\([^\)]*\)/,
+  asset: /!\[[^\]]*\]\([^\)]*\)/,
   url: DEFAULT_TOKENS.url,
   blockReference: /\(\([^)]*\)\)/,
   macro: /{{[^}]*}}/,
@@ -23,6 +25,7 @@ const REGEXES = {
   openDoubleStar: { match: /\*\*(?=(?:[^*]|\*[^*])*\*\*)/, lineBreaks: true },
   openDoubleTilde: { match: /~~(?=(?:[^~]|~[^~])*~~)/, lineBreaks: true },
   openDoubleCarot: { match: /\^\^(?=(?:[^^]|\^[^^])*\^\^)/, lineBreaks: true },
+  // openLeftBracket: { match: /\[(?=(?:[^^]|\^[^^])*\^\^)/, lineBreaks: true },
   text: {
     match: /(?:[^:^~_*#[\]!\n(){]|:(?!:)|{(?!{[^}]*}}))+/,
     lineBreaks: true,
@@ -205,6 +208,58 @@ export const createNull: Processor<InitialSchema> = () => ({
   content: String.fromCharCode(0),
   annotations: [],
 });
+
+export const createAliasToken: Processor<InitialSchema> = (data) => {
+  const { value } = (data as [moo.Token])[0];
+  const arr = /\[([^\]]*)\]\(([^\)]*)\)/.exec(value);
+  if (!arr) {
+    return {
+      content: "",
+      annotations: [],
+    };
+  }
+  const [_, _content, href] = arr;
+  const content = _content || String.fromCharCode(0);
+  return {
+    content,
+    annotations: [
+      {
+        start: 0,
+        end: content.length,
+        type: "link",
+        attributes: {
+          href,
+        },
+      },
+    ],
+  };
+};
+
+export const createAssetToken: Processor<InitialSchema> = (data) => {
+  const { value } = (data as [moo.Token])[0];
+  const arr = /!\[([^\]]*)\]\(([^\)]*)\)/.exec(value);
+  if (!arr) {
+    return {
+      content: "",
+      annotations: [],
+    };
+  }
+  const [_, _content, src] = arr;
+  const content = _content || String.fromCharCode(0);
+  return {
+    content,
+    annotations: [
+      {
+        start: 0,
+        end: content.length,
+        type: "image",
+        attributes: {
+          src,
+        },
+      },
+    ],
+  };
+};
 
 const lexer = compileLexer(REGEXES);
 

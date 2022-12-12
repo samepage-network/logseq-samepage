@@ -9,7 +9,6 @@ import {
    createLinkToken,
    createStrikethroughToken,
    createTextToken,
-   createImageToken,
 } from "samepage/utils/atJsonTokens";
 import lexer, {
    disambiguateTokens,
@@ -20,6 +19,8 @@ import lexer, {
    createWikilinkToken,
    createHashtagToken,
    createNull,
+   createAliasToken,
+   createAssetToken,
 } from "./blockLexer";
 %}
 
@@ -35,12 +36,12 @@ token -> %openDoubleCarot (tokens {% id %} | null {% createNull %}) (%highlight 
    | %openDoubleStar (tokens {% id %} | null {% createNull %}) (%boldStar | %openDoubleStar)  {% createBoldToken %}
    | %openUnder tokens (%under | %openUnder) {% createItalicsToken %}
    | %openStar tokens (%star | %openStar) {% createItalicsToken %}
-   | %leftBracket tokens %rightBracket %leftParen %url %rightParen {% createLinkToken %}
-   | %exclamationMark %leftBracket (tokens {% id %} | null {% id %}) %rightBracket %leftParen %url %rightParen {% createImageToken %}
+   | %asset {% createAssetToken %}
    | %blockReference {% createReferenceToken %}
    | %hash:? %leftBracket %leftBracket tokens %rightBracket %rightBracket {% createWikilinkToken %}
    | %hashtag {% createHashtagToken %}
    | %macro {% parseMacroToken %}
+   | %alias {% createAliasToken %}
    | %text {% createTextToken %}
    | %star  {% createTextToken %}
    | %carot  {% createTextToken %}
@@ -58,4 +59,3 @@ token -> %openDoubleCarot (tokens {% id %} | null {% createNull %}) (%highlight 
    | %newLine {% createTextToken %}
    | %attribute {% createEmpty %}
    | %exclamationMark {% createTextToken %}
-   | %leftBracket %rightBracket %leftParen %url %rightParen {% createTextToken %}
