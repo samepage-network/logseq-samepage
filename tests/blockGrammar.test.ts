@@ -682,32 +682,54 @@ test(
   )
 );
 
-// test(
-//   "Code Blocks",
-//   runTest(
-//     `\`\`\` python
-// class SubClass(SuperClass):
+test(
+  "Code Blocks",
+  runTest(
+    `\`\`\`python
+class SubClass(SuperClass):
 
-//     def __init__(self, **kwargs):
-//         super(SubClass, self).__init__(**kwargs)
+    def __init__(self, **kwargs):
+        super(SubClass, self).__init__(**kwargs)
 
-//     def method(self, *args, **kwargs):
-//         # A comment about what's going on
-//         self.field = Method(*pool_args, **pool_kwargs)
-// \`\`\``,
-//     {
-//       content:
-//         "class SubClass(SuperClass):\n\n .   def __init__(self, **kwargs):\n .       super(SubClass, self).__init__(**kwargs)\n\n .   def method(self, *args, **kwargs):\n .       # A comment about what's going on\n        self.field = Method(*pool_args, **pool_kwargs)\n",
-//       annotations: [
-//         {
-//           type: "code",
-//           start: 0,
-//           end: 253,
-//           attributes: {
-//             language: "python",
-//           },
-//         },
-//       ],
-//     }
-//   )
-// );
+    def method(self, *args, **kwargs):
+        # A comment about what's going on
+        self.field = Method(*pool_args, **pool_kwargs)
+\`\`\``,
+    {
+      content:
+        "class SubClass(SuperClass):\n\n    def __init__(self, **kwargs):\n        super(SubClass, self).__init__(**kwargs)\n\n    def method(self, *args, **kwargs):\n        # A comment about what's going on\n        self.field = Method(*pool_args, **pool_kwargs)\n",
+      annotations: [
+        {
+          type: "code",
+          start: 0,
+          end: 249,
+          attributes: {
+            language: "python",
+          },
+        },
+      ],
+    }
+  )
+);
+
+test(
+  "Code Blocks midblock",
+  runTest(
+    `Check out: \`\`\`javascript
+console.log("Hello");
+\`\`\``,
+    {
+      content: 'Check out: console.log("Hello");\n',
+      annotations: [
+        {
+          type: "code",
+          start: 11,
+          end: 33,
+          attributes: {
+            language: "javascript",
+          },
+        },
+      ],
+    }
+  )
+);

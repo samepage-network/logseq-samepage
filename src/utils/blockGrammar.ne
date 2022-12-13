@@ -1,12 +1,9 @@
-@builtin "number.ne"
-@builtin "whitespace.ne"
 @preprocessor typescript
 
 @{%
 import {
    createEmpty,
    createHighlightingToken,
-   createLinkToken,
    createStrikethroughToken,
    createTextToken,
 } from "samepage/utils/atJsonTokens";
@@ -21,6 +18,7 @@ import lexer, {
    createNull,
    createAliasToken,
    createAssetToken,
+   createCodeBlockToken,
 } from "./blockLexer";
 %}
 
@@ -42,6 +40,7 @@ token -> %openDoubleCarot (tokens {% id %} | null {% createNull %}) (%highlight 
    | %hashtag {% createHashtagToken %}
    | %macro {% parseMacroToken %}
    | %alias {% createAliasToken %}
+   | %codeBlock {% createCodeBlockToken %}
    | %text {% createTextToken %}
    | %star  {% createTextToken %}
    | %carot  {% createTextToken %}

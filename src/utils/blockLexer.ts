@@ -18,6 +18,10 @@ const REGEXES = {
   macro: /{{[^}]*}}/,
   hashtag: /#[a-zA-Z0-9_.-]+/,
   hash: /#/,
+  codeBlock: {
+    match: /```[\w ]*\n(?:[^`]|`(?!``)|``(?!`))*```/,
+    lineBreaks: true,
+  },
   newLine: { match: /\n/, lineBreaks: true },
   openUnder: { match: /_(?=[^_]+_(?!_))/, lineBreaks: true },
   openStar: { match: /\*(?=[^*]+\*(?!\*))/, lineBreaks: true },
@@ -25,9 +29,8 @@ const REGEXES = {
   openDoubleStar: { match: /\*\*(?=(?:[^*]|\*[^*])*\*\*)/, lineBreaks: true },
   openDoubleTilde: { match: /~~(?=(?:[^~]|~[^~])*~~)/, lineBreaks: true },
   openDoubleCarot: { match: /\^\^(?=(?:[^^]|\^[^^])*\^\^)/, lineBreaks: true },
-  // openLeftBracket: { match: /\[(?=(?:[^^]|\^[^^])*\^\^)/, lineBreaks: true },
   text: {
-    match: /(?:[^:^~_*#[\]!\n(){]|:(?!:)|{(?!{[^}]*}}))+/,
+    match: /(?:[^:^~_*#[\]!\n(){`]|:(?!:)|{(?!{[^}]*}})|`(?!``)|``(?!`))+/,
     lineBreaks: true,
   },
 };
@@ -255,6 +258,25 @@ export const createAssetToken: Processor<InitialSchema> = (data) => {
         type: "image",
         attributes: {
           src,
+        },
+      },
+    ],
+  };
+};
+
+export const createCodeBlockToken: Processor<InitialSchema> = (data) => {
+  const { value } = (data as [moo.Token])[0];
+  const language = /^```([\w ]*)\n/.exec(value)?.[1]?.trim?.() || "";
+  const content = value.replace(/^```[\w ]*\n/, "").replace(/```$/, "");
+  return {
+    content,
+    annotations: [
+      {
+        start: 0,
+        end: content.length,
+        type: "code",
+        attributes: {
+          language,
         },
       },
     ],
