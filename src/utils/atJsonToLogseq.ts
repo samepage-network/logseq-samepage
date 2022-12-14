@@ -72,11 +72,9 @@ const atJsonToLogseq = (state: InitialSchema) => {
           replace,
         };
       },
-      code: ({ attributes: { language }, appAttributes }) => {
+      code: ({ attributes: { language } }) => {
         return {
-          prefix: `\`\`\`${
-            appAttributes.defaulted === "true" ? "" : language
-          }\n`,
+          prefix: `\`\`\`${language}\n`,
           suffix: "```",
         };
       },
