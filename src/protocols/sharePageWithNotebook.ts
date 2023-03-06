@@ -6,7 +6,6 @@ import type {
   BlockEntity,
   BlockUUIDTuple,
 } from "@logseq/libs/dist/LSPlugin.user";
-import Automerge from "automerge";
 //@ts-ignore Fix later, already compiles
 import blockGrammar from "../utils/blockGrammar.ne";
 import { v4 } from "uuid";

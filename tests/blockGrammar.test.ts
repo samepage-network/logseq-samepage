@@ -733,3 +733,8 @@ console.log("Hello");
     }
   )
 );
+
+test.skip(
+  "Handle Attributes",
+  runTest("Key:: Value", { content: "", annotations: [] })
+);
