@@ -1,6 +1,4 @@
-import atJsonParser from "samepage/utils/atJsonParser";
-// @ts-ignore for now
-import blockGrammar from "../utils/blockGrammar.ne";
+import blockParser from "../utils/blockParser";
 import setupNotebookQuerying from "samepage/protocols/notebookQuerying";
 import ExternalNotebookReference from "../components/ExternalNotebookReference";
 import renderOverlay from "../components/renderOverlay";
@@ -16,7 +14,7 @@ const setup = () => {
       const content = await logseq.Editor.getBlock(notebookPageId).then(
         (b) => b?.content || null
       );
-      return atJsonParser(blockGrammar, content || "");
+      return blockParser(content || "");
     },
     onQueryResponse: async ({ data, request }) => {
       document.body.dispatchEvent(

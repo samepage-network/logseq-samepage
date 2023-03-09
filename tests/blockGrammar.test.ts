@@ -1,11 +1,8 @@
-// TODO make this test friendly - https://github.com/microsoft/playwright/issues/17852
-import blockGrammar from "../src/utils/blockGrammar";
 import type { InitialSchema } from "samepage/internal/types";
-import atJsonParser from "samepage/utils/atJsonParser";
 import { test, expect } from "@playwright/test";
 import { v4 } from "uuid";
-import lexer from "../src/utils/blockLexer";
 import atJsonToLogseq from "../src/utils/atJsonToLogseq";
+import blockParser from "../src/utils/blockParser";
 import registry from "samepage/internal/registry";
 
 const notebookUuid = v4();
@@ -29,22 +26,9 @@ const runTest =
     opts: { debug?: true; skipInverse?: true } = {}
   ) =>
   () => {
-    if (opts.debug) {
-      const buffer = lexer.reset(md);
-      let token = buffer.next();
-      while (token) {
-        console.log(token);
-        token = buffer.next();
-      }
-    }
-    const output = atJsonParser(blockGrammar, md);
+    const output = blockParser(md, opts);
     expect(output).toBeTruthy();
-    expect(output.content).toEqual(expected.content);
-    expected.annotations.forEach((e, i) => {
-      expect(output.annotations[i]).toEqual(e);
-    });
-    expect(output.annotations[expected.annotations.length]).toBeUndefined();
-    expect(expected.annotations[output.annotations.length]).toBeUndefined();
+    expect(output).toEqual(expected);
     if (!opts.skipInverse) expect(atJsonToLogseq(output)).toEqual(md);
   };
 
@@ -56,7 +40,14 @@ test(
   "Highlighted Text",
   runTest("A ^^highlighted^^ text", {
     content: "A highlighted text",
-    annotations: [{ type: "highlighting", start: 2, end: 13 }],
+    annotations: [
+      {
+        type: "highlighting",
+        start: 2,
+        end: 13,
+        attributes: { delimiter: "^^" },
+      },
+    ],
   })
 );
 
@@ -64,7 +55,14 @@ test(
   "Strikethrough Text",
   runTest("A ~~strikethrough~~ text", {
     content: "A strikethrough text",
-    annotations: [{ type: "strikethrough", start: 2, end: 15 }],
+    annotations: [
+      {
+        type: "strikethrough",
+        start: 2,
+        end: 15,
+        attributes: { delimiter: "~~" },
+      },
+    ],
   })
 );
 
@@ -77,7 +75,7 @@ test(
         type: "italics",
         start: 2,
         end: 9,
-        appAttributes: { logseq: { kind: "_" } },
+        attributes: { delimiter: "_" },
       },
     ],
   })
@@ -92,7 +90,7 @@ test(
         type: "italics",
         start: 2,
         end: 9,
-        appAttributes: { logseq: { kind: "*" } },
+        attributes: { delimiter: "*" },
       },
     ],
   })
@@ -107,7 +105,7 @@ test(
         type: "bold",
         start: 2,
         end: 6,
-        appAttributes: { logseq: { kind: "__" } },
+        attributes: { delimiter: "__" },
       },
     ],
   })
@@ -122,7 +120,7 @@ test(
         type: "bold",
         start: 2,
         end: 6,
-        appAttributes: { logseq: { kind: "**" } },
+        attributes: { delimiter: "**" },
       },
     ],
   })
@@ -243,20 +241,23 @@ test(
 );
 
 test("A normal block reference", () => {
-  runTest("A block ((abcd1234-abcd-1234-abcd-1234abcd1234)) to content", {
-    content: `A block ${String.fromCharCode(0)} to content`,
-    annotations: [
-      {
-        start: 8,
-        end: 9,
-        type: "reference",
-        attributes: {
-          notebookPageId: "abcd1234-abcd-1234-abcd-1234abcd1234",
-          notebookUuid,
+  runTest(
+    "A block ((abcd1234-abcd-1234-abcd-1234abcd1234)) to content",
+    {
+      content: `A block ${String.fromCharCode(0)} to content`,
+      annotations: [
+        {
+          start: 8,
+          end: 9,
+          type: "reference",
+          attributes: {
+            notebookPageId: "abcd1234-abcd-1234-abcd-1234abcd1234",
+            notebookUuid,
+          },
         },
-      },
-    ],
-  })();
+      ],
+    }
+  )();
 });
 
 test("A cross app block reference", () => {
@@ -291,25 +292,28 @@ test("Parse a macro", () => {
 });
 
 test("A normal page reference", () => {
-  runTest("A page [[reference]] to content", {
-    content: `A page ${String.fromCharCode(0)} to content`,
-    annotations: [
-      {
-        start: 7,
-        end: 8,
-        type: "reference",
-        attributes: {
-          notebookPageId: "reference",
-          notebookUuid,
-        },
-        appAttributes: {
-          logseq: {
-            kind: "wikilink",
+  runTest(
+    "A page [[reference]] to content",
+    {
+      content: `A page ${String.fromCharCode(0)} to content`,
+      annotations: [
+        {
+          start: 7,
+          end: 8,
+          type: "reference",
+          attributes: {
+            notebookPageId: "reference",
+            notebookUuid,
+          },
+          appAttributes: {
+            logseq: {
+              kind: "wikilink",
+            },
           },
         },
-      },
-    ],
-  })();
+      ],
+    }
+  )();
 });
 
 test(
@@ -398,13 +402,13 @@ test(
         start: 5,
         end: 9,
         type: "italics",
-        appAttributes: { logseq: { kind: "_" } },
+        attributes: { delimiter: "_" },
       },
       {
         start: 14,
         end: 18,
         type: "italics",
-        appAttributes: { logseq: { kind: "_" } },
+        attributes: { delimiter: "_" },
       },
     ],
   })
@@ -419,7 +423,7 @@ test(
         start: 5,
         end: 9,
         type: "italics",
-        appAttributes: { logseq: { kind: "_" } },
+        attributes: { delimiter: "_" },
       },
     ],
   })
@@ -434,7 +438,7 @@ test(
         start: 5,
         end: 9,
         type: "italics",
-        appAttributes: { logseq: { kind: "*" } },
+        attributes: { delimiter: "*" },
       },
     ],
   })
@@ -449,7 +453,7 @@ test(
         start: 5,
         end: 9,
         type: "bold",
-        appAttributes: { logseq: { kind: "__" } },
+        attributes: { delimiter: "__" },
       },
     ],
   })
@@ -464,7 +468,7 @@ test(
         start: 5,
         end: 9,
         type: "bold",
-        appAttributes: { logseq: { kind: "**" } },
+        attributes: { delimiter: "**" },
       },
     ],
   })
@@ -474,7 +478,14 @@ test(
   "Odd number double tilde",
   runTest("Deal ~~with~~ odd ~~tildes", {
     content: `Deal with odd ~~tildes`,
-    annotations: [{ start: 5, end: 9, type: "strikethrough" }],
+    annotations: [
+      {
+        start: 5,
+        end: 9,
+        type: "strikethrough",
+        attributes: { delimiter: "~~" },
+      },
+    ],
   })
 );
 
@@ -482,7 +493,14 @@ test(
   "Odd number double carot",
   runTest("Deal ^^with^^ odd ^^carots", {
     content: `Deal with odd ^^carots`,
-    annotations: [{ start: 5, end: 9, type: "highlighting" }],
+    annotations: [
+      {
+        start: 5,
+        end: 9,
+        type: "highlighting",
+        attributes: { delimiter: "^^" },
+      },
+    ],
   })
 );
 
@@ -565,13 +583,13 @@ test(
         end: 3,
         start: 2,
         type: "bold",
-        appAttributes: { logseq: { kind: "**" } },
+        attributes: { delimiter: "**" },
       },
       {
         end: 8,
         start: 7,
         type: "bold",
-        appAttributes: { logseq: { kind: "**" } },
+        attributes: { delimiter: "**" },
       },
     ],
   })
@@ -586,13 +604,13 @@ test(
         end: 3,
         start: 2,
         type: "bold",
-        appAttributes: { logseq: { kind: "__" } },
+        attributes: { delimiter: "__" },
       },
       {
         end: 11,
         start: 10,
         type: "bold",
-        appAttributes: { logseq: { kind: "__" } },
+        attributes: { delimiter: "__" },
       },
     ],
   })
@@ -605,8 +623,18 @@ test(
       0
     )} text`,
     annotations: [
-      { end: 3, start: 2, type: "highlighting" },
-      { end: 13, start: 12, type: "highlighting" },
+      {
+        end: 3,
+        start: 2,
+        type: "highlighting",
+        attributes: { delimiter: "^^" },
+      },
+      {
+        end: 13,
+        start: 12,
+        type: "highlighting",
+        attributes: { delimiter: "^^" },
+      },
     ],
   })
 );
@@ -616,8 +644,10 @@ test(
   runTest("A ~~~~struck~~~~ text", {
     content: `A ${String.fromCharCode(0)}struck${String.fromCharCode(0)} text`,
     annotations: [
-      { end: 3, start: 2, type: "strikethrough" },
-      { end: 10, start: 9, type: "strikethrough" },
+      { end: 3, start: 2, type: "strikethrough",
+      attributes: { delimiter: "~~" }, },
+      { end: 10, start: 9, type: "strikethrough",
+      attributes: { delimiter: "~~" }, },
     ],
   })
 );
@@ -631,7 +661,7 @@ test(
         end: 11,
         start: 0,
         type: "bold",
-        appAttributes: { logseq: { kind: "__" } },
+        attributes: { delimiter: "__" },
       },
     ],
   })
@@ -646,7 +676,7 @@ test(
         end: 11,
         start: 0,
         type: "bold",
-        appAttributes: { logseq: { kind: "**" } },
+        attributes: { delimiter: "**" },
       },
     ],
   })

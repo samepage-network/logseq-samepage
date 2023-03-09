@@ -6,8 +6,7 @@ import type {
   BlockEntity,
   BlockUUIDTuple,
 } from "@logseq/libs/dist/LSPlugin.user";
-//@ts-ignore Fix later, already compiles
-import blockGrammar from "../utils/blockGrammar.ne";
+import blockParser from "../utils/blockParser";
 import { v4 } from "uuid";
 import datefnsFormat from "date-fns/format";
 import atJsonToLogseq from "../utils/atJsonToLogseq";
@@ -20,10 +19,7 @@ const isBlock = (notebookPageId: string) => UUID_REGEX.test(notebookPageId);
 const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
   return flattenTree(nodes)
     .map((n) => (index: number) => {
-      const { content: _content, annotations } = atJsonParser(
-        blockGrammar,
-        n.content
-      );
+      const { content: _content, annotations } = blockParser(n.content);
       const content = `${
         _content.length ? _content : String.fromCharCode(0)
       }\n`;

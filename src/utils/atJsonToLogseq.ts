@@ -8,19 +8,29 @@ const atJsonToLogseq = (state: InitialSchema) => {
   return renderAtJson({
     state,
     applyAnnotation: {
-      bold: ({ content, appAttributes }) => ({
-        prefix: appAttributes?.kind || "**",
-        suffix: appAttributes?.kind || `**`,
-        replace: content === String.fromCharCode(0),
-      }),
+      bold: ({ content, attributes }) => {
+        const validDelimiters = new Set(["**", "__"]);
+        const delimiter = attributes?.delimiter || "**";
+        const prefix = validDelimiters.has(delimiter) ? delimiter : "**";
+        return {
+          prefix,
+          suffix: attributes?.open ? "" : prefix,
+          replace: content === String.fromCharCode(0),
+        };
+      },
+      italics: ({ content, attributes }) => {
+        const validDelimiters = new Set(["*", "_"]);
+        const delimiter = attributes?.delimiter || "**";
+        const prefix = validDelimiters.has(delimiter) ? delimiter : "**";
+        return {
+          prefix,
+          suffix: attributes?.open ? "" : prefix,
+          replace: content === String.fromCharCode(0),
+        };
+      },
       highlighting: ({ content }) => ({
         prefix: "^^",
         suffix: `^^`,
-        replace: content === String.fromCharCode(0),
-      }),
-      italics: ({ content, appAttributes }) => ({
-        prefix: appAttributes?.kind || "_",
-        suffix: appAttributes?.kind || `_`,
         replace: content === String.fromCharCode(0),
       }),
       strikethrough: ({ content }) => ({
