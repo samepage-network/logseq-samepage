@@ -241,23 +241,20 @@ test(
 );
 
 test("A normal block reference", () => {
-  runTest(
-    "A block ((abcd1234-abcd-1234-abcd-1234abcd1234)) to content",
-    {
-      content: `A block ${String.fromCharCode(0)} to content`,
-      annotations: [
-        {
-          start: 8,
-          end: 9,
-          type: "reference",
-          attributes: {
-            notebookPageId: "abcd1234-abcd-1234-abcd-1234abcd1234",
-            notebookUuid,
-          },
+  runTest("A block ((abcd1234-abcd-1234-abcd-1234abcd1234)) to content", {
+    content: `A block ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 8,
+        end: 9,
+        type: "reference",
+        attributes: {
+          notebookPageId: "abcd1234-abcd-1234-abcd-1234abcd1234",
+          notebookUuid,
         },
-      ],
-    }
-  )();
+      },
+    ],
+  })();
 });
 
 test("A cross app block reference", () => {
@@ -292,28 +289,25 @@ test("Parse a macro", () => {
 });
 
 test("A normal page reference", () => {
-  runTest(
-    "A page [[reference]] to content",
-    {
-      content: `A page ${String.fromCharCode(0)} to content`,
-      annotations: [
-        {
-          start: 7,
-          end: 8,
-          type: "reference",
-          attributes: {
-            notebookPageId: "reference",
-            notebookUuid,
-          },
-          appAttributes: {
-            logseq: {
-              kind: "wikilink",
-            },
+  runTest("A page [[reference]] to content", {
+    content: `A page ${String.fromCharCode(0)} to content`,
+    annotations: [
+      {
+        start: 7,
+        end: 8,
+        type: "reference",
+        attributes: {
+          notebookPageId: "reference",
+          notebookUuid,
+        },
+        appAttributes: {
+          logseq: {
+            kind: "wikilink",
           },
         },
-      ],
-    }
-  )();
+      },
+    ],
+  })();
 });
 
 test(
@@ -644,10 +638,18 @@ test(
   runTest("A ~~~~struck~~~~ text", {
     content: `A ${String.fromCharCode(0)}struck${String.fromCharCode(0)} text`,
     annotations: [
-      { end: 3, start: 2, type: "strikethrough",
-      attributes: { delimiter: "~~" }, },
-      { end: 10, start: 9, type: "strikethrough",
-      attributes: { delimiter: "~~" }, },
+      {
+        end: 3,
+        start: 2,
+        type: "strikethrough",
+        attributes: { delimiter: "~~" },
+      },
+      {
+        end: 10,
+        start: 9,
+        type: "strikethrough",
+        attributes: { delimiter: "~~" },
+      },
     ],
   })
 );

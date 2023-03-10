@@ -30,19 +30,38 @@ const baseRules: Rule[] = [
   {
     name: "blockElements",
     symbols: ["blockElement", "blockElements"],
-    postprocess: combineAtJsons,
+    postprocess: (data, _, reject) => {
+      const [first, second] = data as [InitialSchema, InitialSchema];
+      if (
+        second.content.indexOf("]]") > -1 &&
+        first.annotations.some(
+          (a) =>
+            a.type === "reference" &&
+            a.attributes.notebookPageId.includes("[[") &&
+            !a.attributes.notebookPageId.includes("]]")
+        )
+      )
+        return reject;
+      return combineAtJsons([first, second]);
+    },
   },
   {
-    name: "blockElements",
+    name: "main",
     symbols: ["blockElements", "lastElement"],
     postprocess: combineAtJsons,
   },
   {
+    name: "main",
+    symbols: ["lastElement"],
+    postprocess: head,
+  },
+
+  {
     name: "blockElement",
     symbols: [
-      { type: "openDoubleCarot" },
+      { type: "highlight" },
       "highlightExpression",
-      "highlightBoundary",
+      { type: "highlight" },
     ],
     postprocess: (data) => {
       const [token, first] = data as [moo.Token, InitialSchema, InitialSchema];
@@ -63,23 +82,10 @@ const baseRules: Rule[] = [
       };
       return highlight;
     },
-    preprocess: (ctx, dot, reject) => {
-      if (dot === 1 && ctx.flags.has("doubleCarot")) return reject;
-      else if (dot === 1) {
-        const flags = new Set(ctx.flags);
-        flags.add("doubleCarot");
-        return { ...ctx, flags };
-      } else if (dot === 3) {
-        const flags = new Set(ctx.flags);
-        flags.delete("doubleCarot");
-        return { ...ctx, flags };
-      }
-      return ctx;
-    },
   },
   {
     name: "highlightExpression",
-    symbols: ["blockElements"],
+    symbols: ["noDoubleCarots"],
     postprocess: head,
   },
   {
@@ -88,22 +94,31 @@ const baseRules: Rule[] = [
     postprocess: () => ({ content: NULL_TOKEN, annotations: [] }),
   },
   {
-    name: "highlightBoundary",
-    symbols: [{ type: "highlight" }],
-    postprocess: createEmptyAtJson,
+    name: "noDoubleCarots",
+    symbols: ["noDoubleCarot", "noDoubleCarots"],
+    postprocess: combineAtJsons,
   },
   {
-    name: "highlightBoundary",
-    symbols: [{ type: "openDoubleCarot" }],
-    postprocess: createEmptyAtJson,
+    name: "noDoubleCarots",
+    symbols: ["noDoubleCarot"],
+    postprocess: head,
+  },
+  {
+    name: "lastElement",
+    symbols: [{ type: "highlight" }, "noDoubleCarots"],
+    postprocess: (data) => {
+      const [, json] = data as [moo.Token, InitialSchema];
+      return combineAtJsons([{ content: "^^", annotations: [] }, json]);
+    },
+  },
+  {
+    name: "lastElement",
+    symbols: [{ type: "highlight" }],
+    postprocess: createTextAtJson,
   },
   {
     name: "blockElement",
-    symbols: [
-      { type: "openDoubleTilde" },
-      "strikeExpression",
-      "strikeBoundary",
-    ],
+    symbols: [{ type: "strike" }, "strikeExpression", { type: "strike" }],
     postprocess: (data) => {
       const [token, first] = data as [moo.Token, InitialSchema, InitialSchema];
       return {
@@ -122,22 +137,10 @@ const baseRules: Rule[] = [
         ).concat(first.annotations),
       };
     },
-    preprocess: (ctx, dot, reject) => {
-      if (dot === 1 && ctx.flags.has("strike")) return reject;
-      else if (dot === 1) {
-        const flags = new Set(ctx.flags);
-        flags.add("strike");
-        return { ...ctx, flags };
-      } else if (dot === 3) {
-        const flags = new Set(ctx.flags);
-        flags.delete("strike");
-        return { ...ctx, flags };
-      }
-    },
   },
   {
     name: "strikeExpression",
-    symbols: ["blockElements"],
+    symbols: ["noDoubleTildes"],
     postprocess: head,
   },
   {
@@ -146,22 +149,35 @@ const baseRules: Rule[] = [
     postprocess: () => ({ content: NULL_TOKEN, annotations: [] }),
   },
   {
-    name: "strikeBoundary",
-    symbols: [{ type: "strike" }],
-    postprocess: createEmptyAtJson,
+    name: "noDoubleTildes",
+    symbols: ["noDoubleTilde", "noDoubleTildes"],
+    postprocess: combineAtJsons,
   },
   {
-    name: "strikeBoundary",
-    symbols: [{ type: "openDoubleTilde" }],
-    postprocess: createEmptyAtJson,
+    name: "noDoubleTildes",
+    symbols: ["noDoubleTilde"],
+    postprocess: head,
+  },
+  {
+    name: "lastElement",
+    symbols: [{ type: "strike" }, "noDoubleTildes"],
+    postprocess: (data) => {
+      const [, json] = data as [moo.Token, InitialSchema];
+      return combineAtJsons([{ content: "~~", annotations: [] }, json]);
+    },
+  },
+  {
+    name: "lastElement",
+    symbols: [{ type: "strike" }],
+    postprocess: createTextAtJson,
   },
 
   {
     name: "blockElement",
     symbols: [
-      { type: "openDoubleUnder" },
+      { type: "doubleUnder" },
       "doubleUnderExpression",
-      "doubleUnderBoundary",
+      { type: "doubleUnder" },
     ],
     postprocess: (data) => {
       const [_, first] = data as [moo.Token, InitialSchema, InitialSchema];
@@ -181,23 +197,10 @@ const baseRules: Rule[] = [
         ).concat(first.annotations),
       };
     },
-
-    preprocess: (ctx, dot, reject) => {
-      if (dot === 1 && ctx.flags.has("doubleUnder")) return reject;
-      else if (dot === 1) {
-        const flags = new Set(ctx.flags);
-        flags.add("doubleUnder");
-        return { ...ctx, flags };
-      } else if (dot === 3) {
-        const flags = new Set(ctx.flags);
-        flags.delete("doubleUnder");
-        return { ...ctx, flags };
-      }
-    },
   },
   {
     name: "doubleUnderExpression",
-    symbols: ["blockElements"],
+    symbols: ["noDoubleUnders"],
     postprocess: head,
   },
   {
@@ -206,21 +209,35 @@ const baseRules: Rule[] = [
     postprocess: () => ({ content: NULL_TOKEN, annotations: [] }),
   },
   {
-    name: "doubleUnderBoundary",
-    symbols: [{ type: "boldUnder" }],
-    postprocess: createEmptyAtJson,
+    name: "noDoubleUnders",
+    symbols: ["noDoubleUnder", "noDoubleUnders"],
+    postprocess: combineAtJsons,
   },
   {
-    name: "doubleUnderBoundary",
-    symbols: [{ type: "openDoubleUnder" }],
-    postprocess: createEmptyAtJson,
+    name: "noDoubleUnders",
+    symbols: ["noDoubleUnder"],
+    postprocess: head,
   },
+  {
+    name: "lastElement",
+    symbols: [{ type: "doubleUnder" }, "noDoubleUnders"],
+    postprocess: (data) => {
+      const [, json] = data as [moo.Token, InitialSchema];
+      return combineAtJsons([{ content: "__", annotations: [] }, json]);
+    },
+  },
+  {
+    name: "lastElement",
+    symbols: [{ type: "doubleUnder" }],
+    postprocess: createTextAtJson,
+  },
+
   {
     name: "blockElement",
     symbols: [
-      { type: "openDoubleStar" },
+      { type: "doubleStar" },
       "doubleStarExpression",
-      "doubleStarBoundary",
+      { type: "doubleStar" },
     ],
     postprocess: (data) => {
       const [token, first] = data as [moo.Token, InitialSchema, InitialSchema];
@@ -240,22 +257,10 @@ const baseRules: Rule[] = [
         ).concat(first.annotations),
       };
     },
-    preprocess: (ctx, dot, reject) => {
-      if (dot === 1 && ctx.flags.has("doubleStar")) return reject;
-      else if (dot === 1) {
-        const flags = new Set(ctx.flags);
-        flags.add("doubleStar");
-        return { ...ctx, flags };
-      } else if (dot === 3) {
-        const flags = new Set(ctx.flags);
-        flags.delete("doubleStar");
-        return { ...ctx, flags };
-      }
-    },
   },
   {
     name: "doubleStarExpression",
-    symbols: ["blockElements"],
+    symbols: ["noDoubleStars"],
     postprocess: head,
   },
   {
@@ -264,19 +269,36 @@ const baseRules: Rule[] = [
     postprocess: () => ({ content: NULL_TOKEN, annotations: [] }),
   },
   {
-    name: "doubleStarBoundary",
-    symbols: [{ type: "boldStar" }],
-    postprocess: createEmptyAtJson,
+    name: "noDoubleStars",
+    symbols: ["noDoubleStar", "noDoubleStars"],
+    postprocess: combineAtJsons,
   },
   {
-    name: "doubleStarBoundary",
-    symbols: [{ type: "openDoubleStar" }],
-    postprocess: createEmptyAtJson,
+    name: "noDoubleStars",
+    symbols: ["noDoubleStar"],
+    postprocess: head,
+  },
+  {
+    name: "lastElement",
+    symbols: [{ type: "doubleStar" }, "noDoubleStars"],
+    postprocess: (data) => {
+      const [, json] = data as [moo.Token, InitialSchema];
+      return combineAtJsons([{ content: "**", annotations: [] }, json]);
+    },
+  },
+  {
+    name: "lastElement",
+    symbols: [{ type: "strike" }],
+    postprocess: createTextAtJson,
   },
 
   {
     name: "blockElement",
-    symbols: [{ type: "openUnder" }, "blockElements", "singleUnderBoundary"],
+    symbols: [
+      { type: "openItalUnder" },
+      "noCloseItalUnders",
+      { type: "closeItalUnder" },
+    ],
     postprocess: (data) => {
       const [_, first] = data as [moo.Token, InitialSchema, InitialSchema];
       return {
@@ -295,33 +317,43 @@ const baseRules: Rule[] = [
         ).concat(first.annotations),
       };
     },
-    preprocess: (ctx, dot, reject) => {
-      if (dot === 1 && ctx.flags.has("singleUnder")) return reject;
-      else if (dot === 1) {
-        const flags = new Set(ctx.flags);
-        flags.add("singleUnder");
-        return { ...ctx, flags };
-      } else if (dot === 3) {
-        const flags = new Set(ctx.flags);
-        flags.delete("singleUnder");
-        return { ...ctx, flags };
-      }
+  },
+  {
+    name: "lastElement",
+    symbols: [{ type: "openItalUnder" }],
+    postprocess: createTextAtJson,
+  },
+  {
+    name: "blockElements",
+    symbols: [{ type: "openItalUnder" }, "noCloseItalUnders"],
+    postprocess: (data) => {
+      const [, json] = data as [moo.Token, InitialSchema];
+      return combineAtJsons([{ content: "_", annotations: [] }, json]);
     },
   },
   {
-    name: "singleUnderBoundary",
-    symbols: [{ type: "under" }],
-    postprocess: createEmptyAtJson,
+    name: "noCloseItalUnders",
+    symbols: ["noCloseItalUnder", "noCloseItalUnders"],
+    postprocess: combineAtJsons,
   },
   {
-    name: "singleUnderBoundary",
-    symbols: [{ type: "openUnder" }],
-    postprocess: createEmptyAtJson,
+    name: "noCloseItalUnders",
+    symbols: ["noCloseItalUnder"],
+    postprocess: head,
+  },
+  {
+    name: "blockElement",
+    symbols: [{ type: "closeItalUnder" }],
+    postprocess: createTextAtJson,
   },
 
   {
     name: "blockElement",
-    symbols: [{ type: "openStar" }, "blockElements", "singleStarBoundary"],
+    symbols: [
+      { type: "openItalStar" },
+      "noCloseItalStars",
+      { type: "closeItalStar" },
+    ],
     postprocess: (data) => {
       const [_, first] = data as [moo.Token, InitialSchema, InitialSchema];
       return {
@@ -342,15 +374,34 @@ const baseRules: Rule[] = [
     },
   },
   {
-    name: "singleStarBoundary",
-    symbols: [{ type: "star" }],
-    postprocess: createEmptyAtJson,
+    name: "lastElement",
+    symbols: [{ type: "openItalStar" }],
+    postprocess: createTextAtJson,
   },
   {
-    name: "singleStarBoundary",
-    symbols: [{ type: "openStar" }],
-    postprocess: createEmptyAtJson,
+    name: "blockElements",
+    symbols: [{ type: "openItalStar" }, "noCloseItalStars"],
+    postprocess: (data) => {
+      const [, json] = data as [moo.Token, InitialSchema];
+      return combineAtJsons([{ content: "*", annotations: [] }, json]);
+    },
   },
+  {
+    name: "noCloseItalStars",
+    symbols: ["noCloseItalStar", "noCloseItalStars"],
+    postprocess: combineAtJsons,
+  },
+  {
+    name: "noCloseItalStars",
+    symbols: ["noCloseItalStar"],
+    postprocess: head,
+  },
+  {
+    name: "blockElement",
+    symbols: [{ type: "closeItalStar" }],
+    postprocess: createTextAtJson,
+  },
+
   {
     name: "blockElement",
     symbols: [{ type: "asset" }],
@@ -410,11 +461,7 @@ const baseRules: Rule[] = [
       { type: "doubleRightBracket" },
     ],
     postprocess: (data, _, reject) => {
-      const [ , token] = data as [
-        moo.Token,
-        InitialSchema,
-        moo.Token
-      ];
+      const [, token] = data as [moo.Token, InitialSchema, moo.Token];
       const notebookPageId = atJsonToLogseq(token);
       const closing = notebookPageId.indexOf("]]");
       const opening = notebookPageId.indexOf("[[");
@@ -478,6 +525,35 @@ const baseRules: Rule[] = [
       };
     },
   },
+  {
+    name: "lastElement",
+    symbols: [{ type: "doubleLeftBracket" }],
+    postprocess: createTextAtJson,
+  },
+  {
+    name: "blockElements",
+    symbols: [{ type: "doubleLeftBracket" }, "noDoubleRightBrackets"],
+    postprocess: (data) => {
+      const [, json] = data as [moo.Token, InitialSchema];
+      return combineAtJsons([{ content: "[[", annotations: [] }, json]);
+    },
+  },
+  {
+    name: "noDoubleRightBrackets",
+    symbols: ["noDoubleRightBracket", "noDoubleRightBrackets"],
+    postprocess: combineAtJsons,
+  },
+  {
+    name: "noDoubleRightBrackets",
+    symbols: ["noDoubleRightBracket"],
+    postprocess: head,
+  },
+  {
+    name: "blockElement",
+    symbols: [{ type: "doubleRightBracket" }],
+    postprocess: createTextAtJson,
+  },
+
   {
     name: "blockElement",
     symbols: [{ type: "hashtag" }],
@@ -596,34 +672,6 @@ const baseRules: Rule[] = [
     symbols: [{ type: "attribute" }],
     postprocess: createEmptyAtJson,
   },
-  {
-    name: "lastElement",
-    symbols: [{ type: "doubleLeftBracket" }],
-    postprocess: createTextAtJson,
-  },
-  {
-    name: "blockElements",
-    symbols: [{ type: "doubleLeftBracket" }, "noDoubleRightBrackets"],
-    postprocess: (data) => {
-      const [, json] = data as [moo.Token, InitialSchema];
-      return combineAtJsons([{ content: "[[", annotations: [] }, json]);
-    },
-  },
-  {
-    name: "noDoubleRightBrackets",
-    symbols: ["noDoubleRightBracket", "noDoubleRightBrackets"],
-    postprocess: combineAtJsons,
-  },
-  {
-    name: "noDoubleRightBrackets",
-    symbols: ["noDoubleRightBracket"],
-    postprocess: head,
-  },
-  {
-    name: "blockElement",
-    symbols: [{ type: "doubleRightBracket" }],
-    postprocess: createTextAtJson,
-  },
   ...[
     "text",
     "star",
@@ -631,10 +679,6 @@ const baseRules: Rule[] = [
     "tilde",
     "under",
     "hash",
-    "boldUnder",
-    "boldStar",
-    "highlight",
-    "strike",
     "leftParen",
     "leftBracket",
     "rightParen",
@@ -648,13 +692,81 @@ const noDoubleRightBracketRules = baseRules
   .filter((b) => {
     const [symbol] = b.symbols;
     return (
-      b.name === "blockElement" &&
+      (b.name === "blockElement" || b.name === "lastElement") &&
       typeof symbol === "object" &&
       symbol.type !== "doubleRightBracket"
     );
   })
   .map((r) => ({ ...r, name: "noDoubleRightBracket" }));
-const grammarRules: Rule[] = baseRules.concat(noDoubleRightBracketRules);
+const noCloseItalUnderRules = baseRules
+  .filter((b) => {
+    const [symbol] = b.symbols;
+    return (
+      (b.name === "blockElement" || b.name === "lastElement") &&
+      typeof symbol === "object" &&
+      symbol.type !== "closeItalUnder" &&
+      symbol.type !== "openItalUnder"
+    );
+  })
+  .map((r) => ({ ...r, name: "noCloseItalUnder" }));
+const noCloseItalStarRules = baseRules
+  .filter((b) => {
+    const [symbol] = b.symbols;
+    return (
+      (b.name === "blockElement" || b.name === "lastElement") &&
+      typeof symbol === "object" &&
+      symbol.type !== "closeItalStar"
+    );
+  })
+  .map((r) => ({ ...r, name: "noCloseItalStar" }));
+const noDoubleCarotRules = baseRules
+  .filter((b) => {
+    const [symbol] = b.symbols;
+    return (
+      (b.name === "blockElement" || b.name === "lastElement") &&
+      typeof symbol === "object" &&
+      symbol.type !== "highlight"
+    );
+  })
+  .map((r) => ({ ...r, name: "noDoubleCarot" }));
+const noDoubleTildeRules = baseRules
+  .filter((b) => {
+    const [symbol] = b.symbols;
+    return (
+      (b.name === "blockElement" || b.name === "lastElement") &&
+      typeof symbol === "object" &&
+      symbol.type !== "strike"
+    );
+  })
+  .map((r) => ({ ...r, name: "noDoubleTilde" }));
+const noDoubleUnderRules = baseRules
+  .filter((b) => {
+    const [symbol] = b.symbols;
+    return (
+      (b.name === "blockElement" || b.name === "lastElement") &&
+      typeof symbol === "object" &&
+      symbol.type !== "doubleUnder"
+    );
+  })
+  .map((r) => ({ ...r, name: "noDoubleUnder" }));
+const noDoubleStarRules = baseRules
+  .filter((b) => {
+    const [symbol] = b.symbols;
+    return (
+      (b.name === "blockElement" || b.name === "lastElement") &&
+      typeof symbol === "object" &&
+      symbol.type !== "doubleStar"
+    );
+  })
+  .map((r) => ({ ...r, name: "noDoubleStar" }));
+const grammarRules: Rule[] = baseRules
+  .concat(noDoubleCarotRules)
+  .concat(noDoubleTildeRules)
+  .concat(noDoubleUnderRules)
+  .concat(noDoubleStarRules)
+  .concat(noCloseItalUnderRules)
+  .concat(noCloseItalStarRules)
+  .concat(noDoubleRightBracketRules);
 
 const blockParser = atJsonParser({
   lexerRules: {
@@ -672,23 +784,18 @@ const blockParser = atJsonParser({
       lineBreaks: true,
     },
     newLine: { match: /\n/, lineBreaks: true },
-    openUnder: { match: /_(?=[^_]+_(?!_))/, lineBreaks: true },
-    openStar: { match: /\*(?=[^*]+\*(?!\*))/, lineBreaks: true },
-    openDoubleUnder: { match: /__(?=(?:[^_]|_[^_])*__)/, lineBreaks: true },
-    openDoubleStar: { match: /\*\*(?=(?:[^*]|\*[^*])*\*\*)/, lineBreaks: true },
-    openDoubleTilde: { match: /~~(?=(?:[^~]|~[^~])*~~)/, lineBreaks: true },
-    openDoubleCarot: {
-      match: /\^\^(?=(?:[^^]|\^[^^])*\^\^)/,
-      lineBreaks: true,
-    },
+    doubleUnder: "__",
+    doubleStar: "**",
+    closeItalUnder: { match: /(?<!\s)_(?=[\s])/, lineBreaks: true },
+    openItalUnder: { match: /(?<=\s)_(?!\s)/, lineBreaks: true },
+    closeItalStar: { match: /(?<!\s)\*(?=\s)/, lineBreaks: true },
+    openItalStar: { match: /(?<=\s)\*(?!\s)/, lineBreaks: true },
     text: {
       match: /(?:[^:^~_*#[\]!\n(){`]|:(?!:)|{(?!{[^}]*}})|`(?!``)|``(?!`))+/,
       lineBreaks: true,
     },
     highlight: "^^",
     strike: "~~",
-    boldUnder: "__",
-    boldStar: "**",
     under: "_",
     star: "*",
     tilde: "~",
