@@ -26,6 +26,16 @@ const createTextRule = ({
 const baseRules: Rule[] = [
   { name: "main", symbols: [], postprocess: createEmptyAtJson },
   { name: "main", symbols: ["blockElements"], postprocess: head },
+  {
+    name: "main",
+    symbols: ["blockElements", "lastElement"],
+    postprocess: combineAtJsons,
+  },
+  {
+    name: "main",
+    symbols: ["lastElement"],
+    postprocess: head,
+  },
   { name: "blockElements", symbols: ["blockElement"], postprocess: head },
   {
     name: "blockElements",
@@ -44,16 +54,6 @@ const baseRules: Rule[] = [
         return reject;
       return combineAtJsons([first, second]);
     },
-  },
-  {
-    name: "main",
-    symbols: ["blockElements", "lastElement"],
-    postprocess: combineAtJsons,
-  },
-  {
-    name: "main",
-    symbols: ["lastElement"],
-    postprocess: head,
   },
 
   {
@@ -786,10 +786,10 @@ const blockParser = atJsonParser({
     newLine: { match: /\n/, lineBreaks: true },
     doubleUnder: "__",
     doubleStar: "**",
-    closeItalUnder: { match: /(?<!\s)_(?=[\s])/, lineBreaks: true },
-    openItalUnder: { match: /(?<=\s)_(?!\s)/, lineBreaks: true },
-    closeItalStar: { match: /(?<!\s)\*(?=\s)/, lineBreaks: true },
-    openItalStar: { match: /(?<=\s)\*(?!\s)/, lineBreaks: true },
+    closeItalUnder: { match: /(?<!\s)_(?:(?=\s)|$)/, lineBreaks: true },
+    openItalUnder: { match: /(?:(?<=\s)|^)_(?!\s)/, lineBreaks: true },
+    closeItalStar: { match: /(?<!\s)\*(?:(?=\s)|$)/, lineBreaks: true },
+    openItalStar: { match: /(?:(?<=\s)|^)\*(?!\s)/, lineBreaks: true },
     text: {
       match: /(?:[^:^~_*#[\]!\n(){`]|:(?!:)|{(?!{[^}]*}})|`(?!``)|``(?!`))+/,
       lineBreaks: true,
