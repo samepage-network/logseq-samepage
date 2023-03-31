@@ -163,7 +163,7 @@ const applyState = async (notebookPageId: string, state: InitialSchema) => {
         includeChildren: true,
       }).then((b) => b?.children || [])
     : window.logseq.Editor.getPageBlocksTree(notebookPageId)
-  ).then((tree = []) => flattenTree(tree.filter(isContentBlock)));
+  ).then((tree) => flattenTree((tree || []).filter(isContentBlock)));
 
   const promises = expectedTree
     .map((expectedNode, order) => () => {
