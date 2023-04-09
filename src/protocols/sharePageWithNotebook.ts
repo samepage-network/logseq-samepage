@@ -437,9 +437,7 @@ const setupSharePageWithNotebook = () => {
   }) => {
     const notebookPageIds = await getParents(blockUuid);
     notebookPageIds.forEach((n) => {
-      if (isShared(n)) {
-        callback(n);
-      }
+      isShared(n).then((s) => s && callback(n));
     });
   };
 
