@@ -44,5 +44,23 @@
     "eslint-plugin-react": "^7.30.1",
     "eslint-plugin-react-hooks": "^4.6.0",
     "typescript": "^4.7.4"
+  },
+  "samepage": {
+    "install": {
+      "steps": [
+        {
+          "title": "Go to plugins dashboard",
+          "children": "image"
+        },
+        {
+          "title": "Go to marketplace",
+          "children": "image"
+        },
+        {
+          "title": "Search SamePage!",
+          "children": "image"
+        }
+      ]
+    }
   }
 }
