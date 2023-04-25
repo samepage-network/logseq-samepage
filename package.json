@@ -35,7 +35,7 @@
     "@logseq/libs": "^0.0.6",
     "date-fns": "^2.29.2",
     "idb": "^7.0.2",
-    "samepage": "^0.59.8"
+    "samepage": "^0.64.8"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.32.0",

@@ -1,4 +1,4 @@
-import type { InitialSchema } from "samepage/internal/types";
+import type { SamePageSchema } from "samepage/internal/types";
 import loadSharePageWithNotebook from "samepage/protocols/sharePageWithNotebook";
 import atJsonParser from "samepage/utils/atJsonParser";
 import createHTMLObserver from "samepage/utils/createHTMLObserver";
@@ -16,7 +16,11 @@ const UUID_REGEX =
   /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const isBlock = (notebookPageId: string) => UUID_REGEX.test(notebookPageId);
 
-const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
+const toAtJson = ({
+  nodes = [],
+}: {
+  nodes?: BlockEntity[];
+}): SamePageSchema => {
   return flattenTree(nodes)
     .map((n) => (index: number) => {
       const { content: _content, annotations } = blockParser(n.content);
@@ -24,7 +28,7 @@ const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
         _content.length ? _content : String.fromCharCode(0)
       }\n`;
       const end = content.length + index;
-      const blockAnnotations: InitialSchema["annotations"] = [
+      const blockAnnotations: SamePageSchema["annotations"] = [
         {
           start: index,
           end,
@@ -57,7 +61,7 @@ const toAtJson = ({ nodes = [] }: { nodes?: BlockEntity[] }): InitialSchema => {
       },
       {
         content: "",
-        annotations: [] as InitialSchema["annotations"],
+        annotations: [] as SamePageSchema["annotations"],
       }
     );
 };
@@ -113,11 +117,11 @@ type SamepageNode = {
   annotation: {
     start: number;
     end: number;
-    annotations: InitialSchema["annotations"];
+    annotations: SamePageSchema["annotations"];
   };
 };
 
-const applyState = async (notebookPageId: string, state: InitialSchema) => {
+const applyState = async (notebookPageId: string, state: SamePageSchema) => {
   const rootPageUuid = UUID_REGEX.test(notebookPageId)
     ? notebookPageId
     : await window.logseq.Editor.getPage(notebookPageId).then(
@@ -279,29 +283,33 @@ const setupSharePageWithNotebook = () => {
               ) || ""
           : datefnsFormat(new Date(), "MMM do, yyyy")
       ),
-    applyState,
-    createPage: (title) =>
-      window.logseq.Editor.createPage(title, {}, { redirect: false }),
+    decodeState: (id, state) => applyState(id, state.$body),
+    ensurePageByTitle: async ({ content: title }) => {
+      const p = await logseq.Editor.getPage(title);
+      if (p) return { notebookPageId: p.originalName, preExisting: true };
+      if (isBlock(title)) {
+        const b = await logseq.Editor.getBlock(title);
+        if (b) return { notebookPageId: b.uuid, preExisting: true };
+      }
+      await window.logseq.Editor.createPage(title, {}, { redirect: false });
+      return { notebookPageId: title, preExisting: false };
+    },
     deletePage: (title) => window.logseq.Editor.deletePage(title),
     openPage: (title) => {
       // as usual, logseq is givin trouble...
-      return new Promise<void>((resolve) =>
+      return new Promise((resolve) =>
         setTimeout(() => {
           window.parent.location.hash = `#/page/${encodeURIComponent(
             title.toLowerCase()
           )}`;
-          resolve();
+          resolve(window.parent.location.href);
         }, 1000)
       );
     },
-    doesPageExist: (title) =>
-      logseq.Editor.getPage(title).then(
-        (p) =>
-          !!p ||
-          (isBlock(title) && logseq.Editor.getBlock(title).then((b) => !!b))
-      ),
-    calculateState: async (notebookPageId) =>
-      calculateState(notebookPageId).then(({ nodes, ...atJson }) => atJson),
+    encodeState: async (notebookPageId) =>
+      calculateState(notebookPageId).then(({ nodes, ...atJson }) => ({
+        $body: atJson,
+      })),
     overlayProps: {
       viewSharedPageProps: {
         linkNewPage: (_, title) =>
