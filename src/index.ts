@@ -22,52 +22,9 @@ const setupUserSettings = () => {
 };
 
 const setupClient = async () => {
-  fetch("samepage.css")
+  fetch("index.css")
     .then((r) => r.text())
-    .then((style) =>
-      logseq.provideStyle(`${style}
-
-div#main-content-container div[data-render*="-"] {
-  flex-direction: column;
-}
-
-.samepage-shared-page-status img {
-  margin: 0;
-}
-
-span.samepage-shared-page-status {
-  margin-bottom: 0;
-  margin-top: 4px;
-  background: var(--ls-secondary-background-color);
-}
-
-body .ls-block {
-  line-height: 1.5;
-}
-
-div[data-samepage-shared*="-"] h1.ls-page-title {
-  margin-bottom: 0;
-}
-
-h1 {
-  margin: 0;
-  font-size: inherit;
-}
-
-.text-black p {
-  color: #000000;
-}
-
-body textarea {
-  line-height: 1.5;
-}
-
-html body {
-  font-size: 16px; 
-  font-family: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,Noto Sans,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji;
-}
-`)
-    );
+    .then((style) => logseq.provideStyle(style));
   const workspace = await logseq.App.getCurrentGraph().then(
     (info) => info?.name || ""
   );
